@@ -8,6 +8,7 @@ import numpy as np
 from ingestion.f1_ingestion import (
     slugify,
     _derive_positions_from_laps,
+    _fetch_jolpica_results,
     _find_or_create,
     _find_or_create_driver,
     F1Ingestion,
@@ -176,6 +177,165 @@ class TestResolveRoundNumber(unittest.TestCase):
         result = ingestion.resolve_round_number(2025, "2025-nonexistent-gp")
 
         self.assertIsNone(result)
+
+
+class TestFetchJolpicaResults(unittest.TestCase):
+    """Tests for fetching race results from the Jolpica API."""
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_returns_results_for_valid_race(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "MRData": {
+                "RaceTable": {
+                    "Races": [{
+                        "Results": [
+                            {
+                                "position": "1",
+                                "Driver": {"givenName": "Lando", "familyName": "Norris", "permanentNumber": "4"},
+                                "Constructor": {"name": "McLaren"},
+                                "laps": "57",
+                                "status": "Finished",
+                                "Time": {"time": "1:42:06.304"},
+                            },
+                            {
+                                "position": "2",
+                                "Driver": {"givenName": "Max", "familyName": "Verstappen", "permanentNumber": "1"},
+                                "Constructor": {"name": "Red Bull"},
+                                "laps": "57",
+                                "status": "Finished",
+                                "Time": {"time": "+0.895"},
+                            },
+                        ]
+                    }]
+                }
+            }
+        }
+
+        results = _fetch_jolpica_results(2025, 1)
+
+        self.assertIsNotNone(results)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["Driver"]["familyName"], "Norris")
+        self.assertEqual(results[1]["position"], "2")
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_returns_none_for_empty_races(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "MRData": {"RaceTable": {"Races": []}}
+        }
+
+        results = _fetch_jolpica_results(2025, 99)
+        self.assertIsNone(results)
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_returns_none_on_http_error(self, mock_get):
+        mock_get.return_value.raise_for_status.side_effect = Exception("404")
+
+        results = _fetch_jolpica_results(2025, 1)
+        self.assertIsNone(results)
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_calls_correct_url(self, mock_get):
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "MRData": {"RaceTable": {"Races": []}}
+        }
+
+        _fetch_jolpica_results(2025, 3)
+        mock_get.assert_called_once_with(
+            "https://api.jolpi.ca/ergast/f1/2025/3/results.json", timeout=30
+        )
+
+
+class TestCreateResultsFromJolpica(unittest.TestCase):
+    """Tests for creating Result records from Jolpica API data."""
+
+    def _make_jolpica_entry(self, position, first, last, number, team,
+                            laps="57", status="Finished", gap=None):
+        entry = {
+            "position": str(position),
+            "Driver": {
+                "givenName": first,
+                "familyName": last,
+                "permanentNumber": str(number),
+            },
+            "Constructor": {"name": team},
+            "laps": laps,
+            "status": status,
+        }
+        if gap is not None:
+            entry["Time"] = {"time": gap}
+        return entry
+
+    @patch("ingestion.f1_ingestion._find_or_create_driver")
+    @patch("ingestion.f1_ingestion._find_or_create_team")
+    def test_creates_results_with_correct_positions(self, mock_team, mock_driver):
+        mock_team.return_value = MagicMock(id=1)
+        mock_driver.return_value = MagicMock(id=10)
+        mock_db = MagicMock()
+        mock_series = MagicMock(id=1)
+        mock_session = MagicMock(id=100)
+
+        entries = [
+            self._make_jolpica_entry(1, "Lando", "Norris", 4, "McLaren", gap="1:42:06.304"),
+            self._make_jolpica_entry(2, "Max", "Verstappen", 1, "Red Bull", gap="+0.895"),
+            self._make_jolpica_entry(20, "Jack", "Doohan", 7, "Alpine", laps="0", status="Retired"),
+        ]
+
+        ingestion = F1Ingestion()
+        ingestion._create_results_from_jolpica(mock_db, mock_series, entries, mock_session)
+
+        self.assertEqual(mock_db.add.call_count, 3)
+
+        # Verify the Result objects passed to db.add
+        added_results = [call.args[0] for call in mock_db.add.call_args_list]
+        self.assertEqual(added_results[0].position, 1)
+        self.assertEqual(added_results[0].gap, "1:42:06.304")
+        self.assertEqual(added_results[0].status, "Finished")
+        self.assertEqual(added_results[1].position, 2)
+        self.assertEqual(added_results[1].gap, "+0.895")
+        self.assertEqual(added_results[2].position, 20)
+        self.assertEqual(added_results[2].status, "Retired")
+        self.assertIsNone(added_results[2].gap)
+
+    @patch("ingestion.f1_ingestion._find_or_create_driver")
+    @patch("ingestion.f1_ingestion._find_or_create_team")
+    def test_retired_driver_has_no_gap(self, mock_team, mock_driver):
+        mock_team.return_value = MagicMock(id=1)
+        mock_driver.return_value = MagicMock(id=10)
+        mock_db = MagicMock()
+
+        entries = [
+            self._make_jolpica_entry(18, "Carlos", "Sainz", 55, "Williams",
+                                     laps="30", status="Retired"),
+        ]
+
+        ingestion = F1Ingestion()
+        ingestion._create_results_from_jolpica(mock_db, MagicMock(id=1), entries, MagicMock(id=1))
+
+        result = mock_db.add.call_args.args[0]
+        self.assertIsNone(result.gap)
+        self.assertEqual(result.status, "Retired")
+
+    @patch("ingestion.f1_ingestion._find_or_create_driver")
+    @patch("ingestion.f1_ingestion._find_or_create_team")
+    def test_laps_field_populated(self, mock_team, mock_driver):
+        mock_team.return_value = MagicMock(id=1)
+        mock_driver.return_value = MagicMock(id=10)
+        mock_db = MagicMock()
+
+        entries = [
+            self._make_jolpica_entry(1, "Lando", "Norris", 4, "McLaren",
+                                     laps="57", gap="1:42:06.304"),
+        ]
+
+        ingestion = F1Ingestion()
+        ingestion._create_results_from_jolpica(mock_db, MagicMock(id=1), entries, MagicMock(id=1))
+
+        result = mock_db.add.call_args.args[0]
+        self.assertEqual(result.laps, 57)
 
 
 if __name__ == "__main__":

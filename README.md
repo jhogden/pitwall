@@ -46,6 +46,14 @@ make dev    # starts infra + frontend dev server
 | `make be` | Backend dev server (Spring Boot) |
 | `make build-be` | Rebuild backend Docker image |
 
+### Tests
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run all tests (backend + data-services) |
+| `make test-be` | Run backend tests (Maven/JUnit) |
+| `make test-data` | Run data-services tests (Python/unittest in Docker) |
+
 ### Database
 
 | Command | Description |

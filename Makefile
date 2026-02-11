@@ -1,4 +1,4 @@
-.PHONY: dev up down build build-fe build-be fe be db logs clean
+.PHONY: dev up down build build-fe build-be fe be db logs clean test test-be test-data
 
 # ── Full stack ────────────────────────────────────────────
 dev: up fe                ## Start infra + frontend dev server
@@ -28,6 +28,15 @@ be:                       ## Backend dev server (Spring Boot)
 
 build-be:                 ## Rebuild backend Docker image
 	docker compose build backend
+
+# ── Tests ────────────────────────────────────────────────
+test: test-be test-data   ## Run all tests
+
+test-be:                  ## Run backend tests
+	cd backend && ./mvnw test -q
+
+test-data:                ## Run data-services tests
+	docker compose run --rm --no-deps data-services python -m unittest discover -s tests -v
 
 # ── Database ──────────────────────────────────────────────
 db:                       ## Start just postgres
