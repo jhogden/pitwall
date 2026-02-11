@@ -4,6 +4,7 @@ from typing import Optional
 
 import fastf1
 import pandas as pd
+import requests
 from sqlalchemy.orm import Session as DbSession
 
 from ingestion.config import db_session
@@ -121,6 +122,22 @@ def _derive_positions_from_laps(f1_session, results_df: pd.DataFrame) -> pd.Data
     return results_df
 
 
+def _fetch_jolpica_results(year: int, round_number: int) -> Optional[list]:
+    """Fetch official race results from the Jolpica API (Ergast successor)."""
+    url = f"https://api.jolpi.ca/ergast/f1/{year}/{round_number}/results.json"
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        races = data["MRData"]["RaceTable"]["Races"]
+        if not races:
+            return None
+        return races[0]["Results"]
+    except Exception:
+        logger.exception("Failed to fetch Jolpica results for %d Round %d", year, round_number)
+        return None
+
+
 class F1Ingestion:
 
     def sync_calendar(self, year: int) -> None:
@@ -233,15 +250,6 @@ class F1Ingestion:
     ) -> None:
         logger.info("Syncing F1 %d Round %d %s results...", year, round_number, session_code)
 
-        f1_session = fastf1.get_session(year, round_number, session_code)
-        f1_session.load()
-
-        results_df = f1_session.results
-        if results_df is None or results_df.empty:
-            return
-
-        results_df = _derive_positions_from_laps(f1_session, results_df)
-
         with db_session() as db:
             series = _get_series(db)
             if not series:
@@ -270,7 +278,23 @@ class F1Ingestion:
             if existing_count > 0:
                 return
 
-            self._create_results(db, series, results_df, db_session_obj)
+            if session_code == "R":
+                # Use Jolpica API for race results (correct official classifications)
+                jolpica_results = _fetch_jolpica_results(year, round_number)
+                if not jolpica_results:
+                    logger.warning("No Jolpica results for F1 %d Round %d", year, round_number)
+                    return
+                self._create_results_from_jolpica(db, series, jolpica_results, db_session_obj)
+            else:
+                # Use FastF1 for non-race sessions (qualifying, sprint)
+                f1_session = fastf1.get_session(year, round_number, session_code)
+                f1_session.load()
+                results_df = f1_session.results
+                if results_df is None or results_df.empty:
+                    return
+                results_df = _derive_positions_from_laps(f1_session, results_df)
+                self._create_results(db, series, results_df, db_session_obj)
+
             db_session_obj.status = "completed"
 
             if session_code == "R":
@@ -300,5 +324,38 @@ class F1Ingestion:
                 session_id=session.id,
                 driver_id=driver.id,
                 position=position,
+                status=status,
+            ))
+
+    def _create_results_from_jolpica(
+        self, db: DbSession, series: Series, jolpica_results: list, session: Session
+    ) -> None:
+        for entry in jolpica_results:
+            driver_data = entry["Driver"]
+            first_name = driver_data.get("givenName", "")
+            last_name = driver_data.get("familyName", "")
+            raw_number = driver_data.get("permanentNumber")
+            driver_number = int(raw_number) if raw_number else None
+
+            constructor = entry.get("Constructor", {})
+            team_name = constructor.get("name", "Unknown")
+
+            position = int(entry.get("position", 0))
+            laps = int(entry.get("laps", 0)) or None
+            status = entry.get("status", "Finished")
+
+            # Gap: winner has absolute time, others have relative gap
+            time_info = entry.get("Time", {})
+            gap = time_info.get("time") if time_info else None
+
+            team = _find_or_create_team(db, series.id, team_name)
+            driver = _find_or_create_driver(db, first_name, last_name, driver_number, team.id)
+
+            db.add(Result(
+                session_id=session.id,
+                driver_id=driver.id,
+                position=position,
+                gap=gap,
+                laps=laps,
                 status=status,
             ))
