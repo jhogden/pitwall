@@ -53,11 +53,11 @@ export default function EventDetailPage() {
     }
 
     setIsLoadingResults(true)
-    api.getResults(selectedSession.id)
+    api.getResults(slug, selectedSession.id)
       .then(setResults)
       .catch(() => setResults([]))
       .finally(() => setIsLoadingResults(false))
-  }, [selectedSession])
+  }, [slug, selectedSession])
 
   if (!event) {
     return (

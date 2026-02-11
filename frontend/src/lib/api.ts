@@ -128,6 +128,6 @@ export const api = {
   getEvent: (slug: string) => fetchApi<EventDetail>(`/api/events/${slug}`),
   getFeed: (page = 0, size = 20, series?: string) =>
     fetchApi<FeedPage>(`/api/feed?page=${page}&size=${size}${series ? `&series=${series}` : ''}`),
-  getResults: (sessionId: number) => fetchApi<Result[]>(`/api/events/results?sessionId=${sessionId}`),
+  getResults: (slug: string, sessionId: number) => fetchApi<Result[]>(`/api/events/${slug}/results?sessionId=${sessionId}`),
   getDriver: (slug: string) => fetchApi<Driver>(`/api/drivers/${slug}`),
 }
