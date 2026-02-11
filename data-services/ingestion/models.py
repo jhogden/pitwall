@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, Integer, BigInteger, String, Text, DateTime, Date, Float,
+    Column, BigInteger, String, Text, DateTime, Date, Integer,
     ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -14,14 +14,12 @@ class Series(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(String(100), nullable=False)
     slug = Column(String(50), nullable=False, unique=True)
-    logo_url = Column(String(500))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    color_primary = Column(String(7), nullable=False)
+    color_secondary = Column(String(7), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     seasons = relationship("Season", back_populates="series")
-    events = relationship("Event", back_populates="series")
     teams = relationship("Team", back_populates="series")
-    drivers = relationship("Driver", back_populates="series")
     feed_items = relationship("FeedItem", back_populates="series")
 
 
@@ -31,13 +29,13 @@ class Season(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     series_id = Column(BigInteger, ForeignKey("series.id"), nullable=False)
     year = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     series = relationship("Series", back_populates="seasons")
+    events = relationship("Event", back_populates="season")
 
     __table_args__ = (
-        UniqueConstraint("series_id", "year", name="uq_seasons_series_year"),
+        UniqueConstraint("series_id", "year", name="seasons_series_id_year_key"),
     )
 
 
@@ -46,13 +44,10 @@ class Circuit(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False)
-    slug = Column(String(100), nullable=False, unique=True)
-    city = Column(String(100))
-    country = Column(String(100))
-    latitude = Column(Float)
-    longitude = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    country = Column(String(100), nullable=False)
+    city = Column(String(100), nullable=False)
+    track_map_url = Column(Text)
+    timezone = Column(String(50), nullable=False)
 
     events = relationship("Event", back_populates="circuit")
 
@@ -61,25 +56,19 @@ class Event(Base):
     __tablename__ = "events"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    series_id = Column(BigInteger, ForeignKey("series.id"), nullable=False)
-    circuit_id = Column(BigInteger, ForeignKey("circuits.id"))
-    season_id = Column(BigInteger, ForeignKey("seasons.id"))
+    season_id = Column(BigInteger, ForeignKey("seasons.id"), nullable=False)
+    circuit_id = Column(BigInteger, ForeignKey("circuits.id"), nullable=False)
     name = Column(String(200), nullable=False)
-    slug = Column(String(200), nullable=False)
-    round_number = Column(Integer)
-    start_date = Column(Date)
-    end_date = Column(Date)
-    status = Column(String(50), default="upcoming")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    slug = Column(String(100), nullable=False, unique=True)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    status = Column(String(20), nullable=False, default="upcoming")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    series = relationship("Series", back_populates="events")
+    season = relationship("Season", back_populates="events")
     circuit = relationship("Circuit", back_populates="events")
     sessions = relationship("Session", back_populates="event")
-
-    __table_args__ = (
-        UniqueConstraint("series_id", "slug", name="uq_events_series_slug"),
-    )
+    feed_items = relationship("FeedItem", back_populates="event")
 
 
 class Session(Base):
@@ -87,21 +76,14 @@ class Session(Base):
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     event_id = Column(BigInteger, ForeignKey("events.id"), nullable=False)
+    type = Column(String(30), nullable=False)
     name = Column(String(100), nullable=False)
-    slug = Column(String(100), nullable=False)
-    session_type = Column(String(50))
-    scheduled_start = Column(DateTime)
-    scheduled_end = Column(DateTime)
-    status = Column(String(50), default="upcoming")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime)
+    status = Column(String(20), nullable=False, default="scheduled")
 
     event = relationship("Event", back_populates="sessions")
     results = relationship("Result", back_populates="session")
-
-    __table_args__ = (
-        UniqueConstraint("event_id", "slug", name="uq_sessions_event_slug"),
-    )
 
 
 class Team(Base):
@@ -110,42 +92,27 @@ class Team(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     series_id = Column(BigInteger, ForeignKey("series.id"), nullable=False)
     name = Column(String(200), nullable=False)
-    slug = Column(String(100), nullable=False)
-    color = Column(String(7))
-    logo_url = Column(String(500))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    short_name = Column(String(50), nullable=False)
+    color = Column(String(7), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     series = relationship("Series", back_populates="teams")
     drivers = relationship("Driver", back_populates="team")
-
-    __table_args__ = (
-        UniqueConstraint("series_id", "slug", name="uq_teams_series_slug"),
-    )
 
 
 class Driver(Base):
     __tablename__ = "drivers"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    series_id = Column(BigInteger, ForeignKey("series.id"), nullable=False)
-    team_id = Column(BigInteger, ForeignKey("teams.id"))
-    first_name = Column(String(100), nullable=False)
-    last_name = Column(String(100), nullable=False)
-    slug = Column(String(100), nullable=False)
+    name = Column(String(200), nullable=False)
     number = Column(Integer)
-    abbreviation = Column(String(10))
-    headshot_url = Column(String(500))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    team_id = Column(BigInteger, ForeignKey("teams.id"))
+    nationality = Column(String(100))
+    slug = Column(String(100), nullable=False, unique=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    series = relationship("Series", back_populates="drivers")
     team = relationship("Team", back_populates="drivers")
     results = relationship("Result", back_populates="driver")
-
-    __table_args__ = (
-        UniqueConstraint("series_id", "slug", name="uq_drivers_series_slug"),
-    )
 
 
 class Result(Base):
@@ -154,15 +121,12 @@ class Result(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     session_id = Column(BigInteger, ForeignKey("sessions.id"), nullable=False)
     driver_id = Column(BigInteger, ForeignKey("drivers.id"), nullable=False)
-    team_id = Column(BigInteger, ForeignKey("teams.id"))
-    position = Column(Integer)
-    grid_position = Column(Integer)
-    points = Column(Float, default=0.0)
-    status = Column(String(50))
-    fastest_lap = Column(String(20))
-    gap_to_leader = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    position = Column(Integer, nullable=False)
+    time = Column(String(50))
+    laps = Column(Integer)
+    gap = Column(String(50))
+    status = Column(String(50), nullable=False, default="finished")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     session = relationship("Session", back_populates="results")
     driver = relationship("Driver", back_populates="results")
@@ -176,15 +140,15 @@ class FeedItem(Base):
     __tablename__ = "feed_items"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    series_id = Column(BigInteger, ForeignKey("series.id"), nullable=False)
-    item_type = Column(String(50), nullable=False)
+    type = Column(String(30), nullable=False)
+    series_id = Column(BigInteger, ForeignKey("series.id"))
+    event_id = Column(BigInteger, ForeignKey("events.id"))
     title = Column(String(500), nullable=False)
-    summary = Column(Text)
-    content = Column(Text)
-    image_url = Column(String(500))
-    video_url = Column(String(500))
-    published_at = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    summary = Column(Text, nullable=False)
+    content_url = Column(Text)
+    thumbnail_url = Column(Text)
+    published_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     series = relationship("Series", back_populates="feed_items")
+    event = relationship("Event", back_populates="feed_items")

@@ -1,7 +1,9 @@
 import os
+from contextlib import contextmanager
+
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 
 load_dotenv()
 
@@ -13,10 +15,15 @@ engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
-def get_db_session():
-    """Create and return a new database session."""
-    session = SessionLocal()
+@contextmanager
+def db_session():
+    """Context manager for database sessions. Commits on success, rolls back on error."""
+    session: Session = SessionLocal()
     try:
         yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
