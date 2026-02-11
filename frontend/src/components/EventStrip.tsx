@@ -7,14 +7,6 @@ import { format, parseISO } from 'date-fns'
 import type { EventSummary } from '@/lib/api'
 import SeriesBadge from '@/components/SeriesBadge'
 
-const SAMPLE_EVENTS: EventSummary[] = [
-  { id: 1, name: 'Bahrain Grand Prix', slug: 'bahrain-gp-2025', seriesSlug: 'f1', seriesName: 'F1', seriesColor: '#E10600', circuitName: 'Bahrain International Circuit', country: 'Bahrain', city: 'Sakhir', startDate: '2025-03-14', endDate: '2025-03-16', status: 'completed' },
-  { id: 2, name: 'Saudi Arabian Grand Prix', slug: 'saudi-gp-2025', seriesSlug: 'f1', seriesName: 'F1', seriesColor: '#E10600', circuitName: 'Jeddah Corniche Circuit', country: 'Saudi Arabia', city: 'Jeddah', startDate: '2025-03-21', endDate: '2025-03-23', status: 'upcoming' },
-  { id: 3, name: 'Qatar 1812km', slug: 'qatar-1812-2025', seriesSlug: 'wec', seriesName: 'WEC', seriesColor: '#00548F', circuitName: 'Lusail International Circuit', country: 'Qatar', city: 'Lusail', startDate: '2025-02-28', endDate: '2025-03-01', status: 'completed' },
-  { id: 4, name: '6 Hours of Imola', slug: 'imola-6h-2025', seriesSlug: 'wec', seriesName: 'WEC', seriesColor: '#00548F', circuitName: 'Autodromo Enzo e Dino Ferrari', country: 'Italy', city: 'Imola', startDate: '2025-04-20', endDate: '2025-04-20', status: 'upcoming' },
-  { id: 5, name: 'Australian Grand Prix', slug: 'australia-gp-2025', seriesSlug: 'f1', seriesName: 'F1', seriesColor: '#E10600', circuitName: 'Albert Park Circuit', country: 'Australia', city: 'Melbourne', startDate: '2025-03-28', endDate: '2025-03-30', status: 'upcoming' },
-]
-
 function formatDateRange(startDate: string, endDate: string): string {
   const start = parseISO(startDate)
   const end = parseISO(endDate)
@@ -55,7 +47,7 @@ function StatusIndicator({ status }: { status: string }) {
 }
 
 export default function EventStrip() {
-  const [events, setEvents] = useState<EventSummary[]>(SAMPLE_EVENTS)
+  const [events, setEvents] = useState<EventSummary[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
@@ -63,12 +55,13 @@ export default function EventStrip() {
   useEffect(() => {
     async function fetchEvents() {
       try {
-        const res = await fetch('/api/calendar')
+        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
+        const res = await fetch(`${apiBase}/api/calendar`)
         if (!res.ok) throw new Error('Failed to fetch')
         const data: EventSummary[] = await res.json()
-        if (data.length > 0) setEvents(data)
+        setEvents(data)
       } catch {
-        // Keep sample data on failure
+        // API unavailable
       }
     }
     fetchEvents()
@@ -138,7 +131,7 @@ export default function EventStrip() {
         {events.map((event) => (
           <Link
             key={event.id}
-            href={`/events/${event.slug}`}
+            href={`/event/${event.slug}`}
             className="shrink-0 w-56 rounded-lg bg-pitwall-bg border border-pitwall-border hover:border-pitwall-text-muted transition-colors group"
           >
             {/* Series color top border */}

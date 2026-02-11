@@ -21,3 +21,22 @@ export const SESSION_TYPE_LABELS: Record<string, string> = {
   sprint: 'Sprint',
   warmup: 'Warm Up',
 }
+
+export interface SeriesFilter {
+  slug: string | null
+  name: string
+  color?: string
+}
+
+export const SERIES_FILTERS: SeriesFilter[] = [
+  { slug: null, name: 'All' },
+  { slug: 'f1', name: 'F1', color: '#E10600' },
+  { slug: 'wec', name: 'WEC', color: '#00548F' },
+  { slug: 'imsa', name: 'IMSA', color: '#DA291C' },
+]
+
+export const STATUS_STYLES: Record<string, string> = {
+  upcoming: 'text-yellow-400 bg-yellow-400/10',
+  live: 'text-green-400 bg-green-400/10',
+  completed: 'text-pitwall-text-muted bg-pitwall-surface-2',
+}

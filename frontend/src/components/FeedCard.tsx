@@ -107,7 +107,7 @@ export default function FeedCard({ item }: FeedCardProps) {
 
   if (item.eventSlug) {
     return (
-      <Link href={`/events/${item.eventSlug}`} className="block">
+      <Link href={`/event/${item.eventSlug}`} className="block">
         {cardContent}
       </Link>
     )

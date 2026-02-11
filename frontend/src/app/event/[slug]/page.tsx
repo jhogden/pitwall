@@ -6,79 +6,58 @@ import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { ArrowLeft, MapPin } from 'lucide-react'
 import SeriesBadge from '@/components/SeriesBadge'
+import LiveIndicator from '@/components/LiveIndicator'
 import SessionTimeline from '@/components/SessionTimeline'
 import RaceResultCard from '@/components/RaceResultCard'
-import type { EventDetail, Result } from '@/lib/api'
+import { SESSION_TYPE_LABELS, STATUS_STYLES } from '@/lib/constants'
+import { api } from '@/lib/api'
+import type { EventDetail, Result, Session } from '@/lib/api'
 
-const SAMPLE_EVENT: EventDetail = {
-  id: 1, name: 'Bahrain Grand Prix', slug: 'bahrain-gp-2025',
-  series: { id: 1, name: 'Formula 1', slug: 'f1', colorPrimary: '#E10600', colorSecondary: '#FF4444', logoUrl: null },
-  circuit: { id: 1, name: 'Bahrain International Circuit', country: 'Bahrain', city: 'Sakhir', trackMapUrl: null, timezone: 'Asia/Bahrain' },
-  startDate: '2025-03-14', endDate: '2025-03-16', status: 'completed',
-  sessions: [
-    { id: 1, type: 'practice', name: 'Free Practice 1', startTime: '2025-03-14T11:30:00Z', endTime: '2025-03-14T12:30:00Z', status: 'completed' },
-    { id: 2, type: 'practice', name: 'Free Practice 2', startTime: '2025-03-14T15:00:00Z', endTime: '2025-03-14T16:00:00Z', status: 'completed' },
-    { id: 3, type: 'practice', name: 'Free Practice 3', startTime: '2025-03-15T12:30:00Z', endTime: '2025-03-15T13:30:00Z', status: 'completed' },
-    { id: 4, type: 'qualifying', name: 'Qualifying', startTime: '2025-03-15T16:00:00Z', endTime: '2025-03-15T17:00:00Z', status: 'completed' },
-    { id: 5, type: 'race', name: 'Race', startTime: '2025-03-16T15:00:00Z', endTime: '2025-03-16T17:00:00Z', status: 'completed' },
-  ],
-}
-
-const SAMPLE_RESULTS: Result[] = [
-  { id: 1, position: 1, driverName: 'Max Verstappen', driverNumber: 1, teamName: 'Red Bull Racing', teamColor: '#3671C6', time: '1:31:44.742', laps: 57, gap: null, status: 'finished' },
-  { id: 2, position: 2, driverName: 'Lando Norris', driverNumber: 4, teamName: 'McLaren', teamColor: '#FF8000', time: '+11.987', laps: 57, gap: '+11.987', status: 'finished' },
-  { id: 3, position: 3, driverName: 'Charles Leclerc', driverNumber: 16, teamName: 'Ferrari', teamColor: '#E8002D', time: '+17.123', laps: 57, gap: '+17.123', status: 'finished' },
-  { id: 4, position: 4, driverName: 'Carlos Sainz', driverNumber: 55, teamName: 'Ferrari', teamColor: '#E8002D', time: '+21.456', laps: 57, gap: '+21.456', status: 'finished' },
-  { id: 5, position: 5, driverName: 'Lewis Hamilton', driverNumber: 44, teamName: 'Ferrari', teamColor: '#E8002D', time: '+34.789', laps: 57, gap: '+34.789', status: 'finished' },
-  { id: 6, position: 6, driverName: 'George Russell', driverNumber: 63, teamName: 'Mercedes', teamColor: '#27F4D2', time: '+42.012', laps: 57, gap: '+42.012', status: 'finished' },
-  { id: 7, position: 7, driverName: 'Oscar Piastri', driverNumber: 81, teamName: 'McLaren', teamColor: '#FF8000', time: '+48.345', laps: 57, gap: '+48.345', status: 'finished' },
-  { id: 8, position: 8, driverName: 'Fernando Alonso', driverNumber: 14, teamName: 'Aston Martin', teamColor: '#229971', time: '+55.678', laps: 57, gap: '+55.678', status: 'finished' },
-  { id: 9, position: 9, driverName: 'Pierre Gasly', driverNumber: 10, teamName: 'Alpine', teamColor: '#FF87BC', time: '+62.901', laps: 57, gap: '+62.901', status: 'finished' },
-  { id: 10, position: 10, driverName: 'Yuki Tsunoda', driverNumber: 22, teamName: 'RB', teamColor: '#6692FF', time: '+68.234', laps: 57, gap: '+68.234', status: 'finished' },
-]
-
-const STATUS_STYLES: Record<string, string> = {
+const EVENT_STATUS_STYLES: Record<string, string> = {
+  ...STATUS_STYLES,
   upcoming: 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30',
   live: 'text-green-400 bg-green-400/10 border-green-400/30',
   completed: 'text-pitwall-text-muted bg-pitwall-surface-2 border-pitwall-border',
 }
+
+const SESSION_PRIORITY = ['race', 'sprint', 'qualifying']
 
 export default function EventDetailPage() {
   const params = useParams()
   const slug = params.slug as string
   const [event, setEvent] = useState<EventDetail | null>(null)
   const [results, setResults] = useState<Result[]>([])
+  const [selectedSession, setSelectedSession] = useState<Session | null>(null)
+  const [isLoadingResults, setIsLoadingResults] = useState(false)
 
   useEffect(() => {
-    const fetchEventData = async () => {
-      try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-        const response = await fetch(`${apiBase}/api/events/${slug}`)
-        if (response.ok) {
-          const data = await response.json()
-          setEvent(data)
+    api.getEvent(slug)
+      .then(data => {
+        setEvent(data)
 
-          if (data.status === 'completed' && data.sessions?.length > 0) {
-            const raceSession = data.sessions.find((s: { type: string }) => s.type === 'race')
-            if (raceSession) {
-              const resultsResponse = await fetch(`${apiBase}/api/events/${slug}/results?sessionId=${raceSession.id}`)
-              if (resultsResponse.ok) {
-                setResults(await resultsResponse.json())
-                return
-              }
-            }
-          }
-          return
-        }
-      } catch {
-        // API unavailable
-      }
-      setEvent(SAMPLE_EVENT)
-      setResults(SAMPLE_RESULTS)
+        const completedSessions = (data.sessions || []).filter(
+          (s: Session) => s.status === 'completed' && s.type !== 'practice'
+        )
+        const best = SESSION_PRIORITY
+          .map(type => completedSessions.find((s: Session) => s.type === type))
+          .find(Boolean)
+        if (best) setSelectedSession(best)
+      })
+      .catch(() => {})
+  }, [slug])
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setResults([])
+      return
     }
 
-    fetchEventData()
-  }, [slug])
+    setIsLoadingResults(true)
+    api.getResults(selectedSession.id)
+      .then(setResults)
+      .catch(() => setResults([]))
+      .finally(() => setIsLoadingResults(false))
+  }, [selectedSession])
 
   if (!event) {
     return (
@@ -88,6 +67,9 @@ export default function EventDetailPage() {
       </div>
     )
   }
+
+  const resultSessions = event.sessions.filter(s => s.type !== 'practice')
+  const raceSession = event.sessions.find(s => s.type === 'race')
 
   return (
     <div>
@@ -110,8 +92,9 @@ export default function EventDetailPage() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <SeriesBadge name={event.series.name} color={event.series.colorPrimary} />
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_STYLES[event.status] || ''}`}>
-                {event.status}
+              <span className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${EVENT_STATUS_STYLES[event.status] || ''}`}>
+                {event.status === 'live' && <LiveIndicator />}
+                {event.status === 'live' ? 'LIVE' : event.status}
               </span>
             </div>
             <h1 className="text-3xl font-bold text-pitwall-text mb-2">{event.name}</h1>
@@ -137,30 +120,77 @@ export default function EventDetailPage() {
         </div>
 
         <div className="lg:col-span-2">
-          {event.status === 'completed' && results.length > 0 && (
+          {resultSessions.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-pitwall-text mb-4">Race Results</h2>
-              <RaceResultCard
-                results={results.map(r => ({
-                  position: r.position,
-                  driverName: r.driverName,
-                  driverNumber: r.driverNumber,
-                  teamName: r.teamName,
-                  teamColor: r.teamColor,
-                  gap: r.gap,
-                }))}
-                eventName={event.name}
-              />
+              <div className="flex items-center gap-3 mb-4">
+                <h2 className="text-lg font-semibold text-pitwall-text">Results</h2>
+                <div className="flex gap-1 bg-pitwall-surface rounded-lg p-0.5">
+                  {resultSessions.map(session => (
+                    <button
+                      key={session.id}
+                      onClick={() => setSelectedSession(session)}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                        selectedSession?.id === session.id
+                          ? 'bg-pitwall-accent text-white'
+                          : session.status === 'completed'
+                            ? 'text-pitwall-text-muted hover:text-pitwall-text'
+                            : 'text-pitwall-text-muted/50 cursor-not-allowed'
+                      }`}
+                      disabled={session.status !== 'completed'}
+                    >
+                      {SESSION_TYPE_LABELS[session.type] || session.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {isLoadingResults ? (
+                <div className="space-y-2">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="h-12 bg-pitwall-surface rounded animate-pulse" />
+                  ))}
+                </div>
+              ) : results.length > 0 ? (
+                <RaceResultCard
+                  results={results.map(r => ({
+                    position: r.position,
+                    driverName: r.driverName,
+                    driverNumber: r.driverNumber,
+                    teamName: r.teamName,
+                    teamColor: r.teamColor,
+                    gap: r.gap,
+                  }))}
+                  eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
+                />
+              ) : selectedSession ? (
+                <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-8 text-center">
+                  <p className="text-pitwall-text-muted">No results available for this session yet.</p>
+                </div>
+              ) : null}
             </div>
           )}
 
           {event.status === 'upcoming' && (
             <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-8 text-center">
               <p className="text-pitwall-text-muted text-lg">
-                Results will be available after the race
+                Results will be available after sessions complete
               </p>
-              <p className="text-sm text-pitwall-text-muted mt-2">
-                Race starts {format(parseISO(event.sessions.find(s => s.type === 'race')?.startTime || event.startDate), 'PPpp')}
+              {raceSession && (
+                <p className="text-sm text-pitwall-text-muted mt-2">
+                  Race starts {format(parseISO(raceSession.startTime), 'PPpp')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {event.status === 'live' && (
+            <div className="bg-green-400/5 rounded-lg border border-green-400/20 p-8 text-center">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <LiveIndicator size="md" />
+                <p className="text-green-400 text-lg font-semibold">Event is LIVE</p>
+              </div>
+              <p className="text-sm text-pitwall-text-muted">
+                Results will update as sessions complete
               </p>
             </div>
           )}

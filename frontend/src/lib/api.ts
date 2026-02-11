@@ -1,9 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 async function fetchApi<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    next: { revalidate: 60 },
-  })
+  const res = await fetch(`${API_BASE}${path}`)
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }
@@ -120,8 +118,13 @@ export interface FeedPage {
 export const api = {
   getSeries: () => fetchApi<Series[]>('/api/series'),
   getSeriesBySlug: (slug: string) => fetchApi<Series>(`/api/series/${slug}`),
-  getCalendar: (series?: string) =>
-    fetchApi<EventSummary[]>(series ? `/api/calendar?series=${series}` : '/api/calendar'),
+  getCalendar: (series?: string, year?: number) => {
+    const params = new URLSearchParams()
+    if (series) params.set('series', series)
+    if (year) params.set('year', String(year))
+    const qs = params.toString()
+    return fetchApi<EventSummary[]>(`/api/calendar${qs ? `?${qs}` : ''}`)
+  },
   getEvent: (slug: string) => fetchApi<EventDetail>(`/api/events/${slug}`),
   getFeed: (page = 0, size = 20, series?: string) =>
     fetchApi<FeedPage>(`/api/feed?page=${page}&size=${size}${series ? `&series=${series}` : ''}`),
