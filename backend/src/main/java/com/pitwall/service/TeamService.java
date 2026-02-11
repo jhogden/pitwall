@@ -4,10 +4,12 @@ import com.pitwall.dto.TeamDto;
 import com.pitwall.model.Team;
 import com.pitwall.repository.TeamRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@Transactional(readOnly = true)
 public class TeamService {
 
     private final TeamRepository teamRepository;

@@ -23,15 +23,27 @@ public class CalendarController {
 
     @GetMapping
     public ResponseEntity<List<EventDto>> getCalendar(
-            @RequestParam(required = false) String series) {
+            @RequestParam(required = false) String series,
+            @RequestParam(required = false) Integer year) {
+        if (series != null && year != null) {
+            return ResponseEntity.ok(calendarService.findEventsBySeriesAndYear(series, year));
+        }
         if (series != null) {
             return ResponseEntity.ok(calendarService.findEventsBySeries(series));
+        }
+        if (year != null) {
+            return ResponseEntity.ok(calendarService.findEventsByYear(year));
         }
         return ResponseEntity.ok(calendarService.findUpcomingEvents());
     }
 
     @GetMapping("/{series}")
-    public ResponseEntity<List<EventDto>> getEventsBySeries(@PathVariable String series) {
+    public ResponseEntity<List<EventDto>> getEventsBySeries(
+            @PathVariable String series,
+            @RequestParam(required = false) Integer year) {
+        if (year != null) {
+            return ResponseEntity.ok(calendarService.findEventsBySeriesAndYear(series, year));
+        }
         return ResponseEntity.ok(calendarService.findEventsBySeries(series));
     }
 }

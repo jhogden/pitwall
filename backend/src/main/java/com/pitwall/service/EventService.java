@@ -8,10 +8,12 @@ import com.pitwall.model.Session;
 import com.pitwall.repository.EventRepository;
 import com.pitwall.repository.SessionRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@Transactional(readOnly = true)
 public class EventService {
 
     private final EventRepository eventRepository;

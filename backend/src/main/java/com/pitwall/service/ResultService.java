@@ -4,10 +4,12 @@ import com.pitwall.dto.ResultDto;
 import com.pitwall.mapper.ResultMapper;
 import com.pitwall.repository.ResultRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@Transactional(readOnly = true)
 public class ResultService {
 
     private final ResultRepository resultRepository;

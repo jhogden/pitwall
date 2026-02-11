@@ -20,4 +20,8 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     List<Event> findByStartDateBetweenOrderByStartDate(LocalDate start, LocalDate end);
 
     List<Event> findBySeasonSeriesSlugOrderByStartDate(String seriesSlug);
+
+    List<Event> findBySeasonYearOrderByStartDate(int year);
+
+    List<Event> findBySeasonSeriesSlugAndSeasonYearOrderByStartDate(String seriesSlug, int year);
 }

@@ -5,10 +5,12 @@ import com.pitwall.exception.ResourceNotFoundException;
 import com.pitwall.mapper.SeriesMapper;
 import com.pitwall.repository.SeriesRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@Transactional(readOnly = true)
 public class SeriesService {
 
     private final SeriesRepository seriesRepository;
