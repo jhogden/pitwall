@@ -131,7 +131,7 @@ export default function EventStrip() {
         {events.map((event) => (
           <Link
             key={event.id}
-            href={`/event/${event.slug}`}
+            href={`/event/${event.seriesSlug}/${event.slug}`}
             className="shrink-0 w-56 rounded-lg bg-pitwall-bg border border-pitwall-border hover:border-pitwall-text-muted transition-colors group"
           >
             {/* Series color top border */}

@@ -68,13 +68,14 @@ export default function EventDetailPage() {
     )
   }
 
+  const eventYear = parseISO(event.startDate).getFullYear()
   const resultSessions = event.sessions.filter(s => s.type !== 'practice')
   const raceSession = event.sessions.find(s => s.type === 'race')
 
   return (
     <div>
       <Link
-        href="/calendar"
+        href={`/calendar/${eventYear}`}
         className="inline-flex items-center gap-1 text-sm text-pitwall-text-muted hover:text-pitwall-text mb-4 transition-colors"
       >
         <ArrowLeft size={16} />

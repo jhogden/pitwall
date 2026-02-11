@@ -144,7 +144,7 @@ export default function SeriesDetailPage() {
           {SAMPLE_RECENT_EVENTS.map(event => (
             <Link
               key={event.slug}
-              href={`/event/${event.slug}`}
+              href={`/event/${slug}/${event.slug}`}
               className="flex items-center justify-between p-4 bg-pitwall-surface rounded-lg border border-pitwall-border hover:border-pitwall-accent/30 transition-colors"
             >
               <div>
