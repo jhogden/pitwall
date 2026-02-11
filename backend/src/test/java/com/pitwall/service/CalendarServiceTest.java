@@ -109,6 +109,73 @@ class CalendarServiceTest {
         verifyNoInteractions(eventMapper);
     }
 
+    @Test
+    void findEventsByYear_delegatesToRepositoryWithCorrectYear() {
+        // Arrange
+        int year = 2025;
+        Event event = buildEvent(1L, "bahrain-gp");
+        EventDto dto = buildEventDto(1L, "bahrain-gp");
+
+        when(eventRepository.findBySeasonYearOrderByStartDate(year)).thenReturn(List.of(event));
+        when(eventMapper.toSummaryDto(event)).thenReturn(dto);
+
+        // Act
+        List<EventDto> result = calendarService.findEventsByYear(year);
+
+        // Assert
+        assertEquals(1, result.size());
+        assertEquals(dto, result.get(0));
+        verify(eventRepository).findBySeasonYearOrderByStartDate(year);
+    }
+
+    @Test
+    void findEventsByYear_whenNoneExist_returnsEmptyList() {
+        // Arrange
+        when(eventRepository.findBySeasonYearOrderByStartDate(2030)).thenReturn(Collections.emptyList());
+
+        // Act
+        List<EventDto> result = calendarService.findEventsByYear(2030);
+
+        // Assert
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(eventMapper);
+    }
+
+    @Test
+    void findEventsBySeriesAndYear_delegatesToRepositoryWithCorrectParams() {
+        // Arrange
+        String seriesSlug = "f1";
+        int year = 2025;
+        Event event = buildEvent(1L, "bahrain-gp");
+        EventDto dto = buildEventDto(1L, "bahrain-gp");
+
+        when(eventRepository.findBySeasonSeriesSlugAndSeasonYearOrderByStartDate(seriesSlug, year))
+                .thenReturn(List.of(event));
+        when(eventMapper.toSummaryDto(event)).thenReturn(dto);
+
+        // Act
+        List<EventDto> result = calendarService.findEventsBySeriesAndYear(seriesSlug, year);
+
+        // Assert
+        assertEquals(1, result.size());
+        assertEquals(dto, result.get(0));
+        verify(eventRepository).findBySeasonSeriesSlugAndSeasonYearOrderByStartDate(seriesSlug, year);
+    }
+
+    @Test
+    void findEventsBySeriesAndYear_whenNoneExist_returnsEmptyList() {
+        // Arrange
+        when(eventRepository.findBySeasonSeriesSlugAndSeasonYearOrderByStartDate("wec", 2030))
+                .thenReturn(Collections.emptyList());
+
+        // Act
+        List<EventDto> result = calendarService.findEventsBySeriesAndYear("wec", 2030);
+
+        // Assert
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(eventMapper);
+    }
+
     private Event buildEvent(Long id, String slug) {
         Series series = new Series();
         series.setId(1L);
