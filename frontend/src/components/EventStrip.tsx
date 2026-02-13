@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Check, Radio } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
-import type { EventSummary } from '@/lib/api'
+import { api, type EventSummary } from '@/lib/api'
 import SeriesBadge from '@/components/SeriesBadge'
 
 function formatDateRange(startDate: string, endDate: string): string {
@@ -53,18 +53,54 @@ export default function EventStrip() {
   const [canScrollRight, setCanScrollRight] = useState(true)
 
   useEffect(() => {
-    async function fetchEvents() {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const nextYear = currentYear + 1
+
+    const rankStatus = (status: string) => {
+      if (status === 'live') return 0
+      if (status === 'upcoming') return 1
+      return 2
+    }
+
+    const sortEvents = (a: EventSummary, b: EventSummary) => {
+      const statusDiff = rankStatus(a.status) - rankStatus(b.status)
+      if (statusDiff !== 0) return statusDiff
+
+      const aDate = parseISO(a.startDate).getTime()
+      const bDate = parseISO(b.startDate).getTime()
+      if (a.status === 'completed' && b.status === 'completed') {
+        return bDate - aDate
+      }
+      return aDate - bDate
+    }
+
+    async function fetchHeaderEvents() {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
-        const res = await fetch(`${apiBase}/api/calendar`)
-        if (!res.ok) throw new Error('Failed to fetch')
-        const data: EventSummary[] = await res.json()
-        setEvents(data)
+        const [thisYear, followingYear] = await Promise.all([
+          api.getCalendar(undefined, currentYear),
+          api.getCalendar(undefined, nextYear),
+        ])
+
+        const merged = [...thisYear, ...followingYear]
+        const uniqueById = new Map<number, EventSummary>()
+        for (const event of merged) {
+          uniqueById.set(event.id, event)
+        }
+
+        const prioritized = Array.from(uniqueById.values())
+          .sort(sortEvents)
+          .slice(0, 16)
+
+        setEvents(prioritized)
       } catch {
         // API unavailable
       }
     }
-    fetchEvents()
+
+    fetchHeaderEvents()
+    const intervalId = setInterval(fetchHeaderEvents, 60000)
+    return () => clearInterval(intervalId)
   }, [])
 
   const updateScrollButtons = () => {
@@ -92,6 +128,11 @@ export default function EventStrip() {
     const amount = 300
     el.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' })
   }
+
+  const liveEvents = events.filter(event => event.status === 'live')
+  const upcomingEvents = events.filter(event => event.status === 'upcoming')
+  const completedEvents = events.filter(event => event.status === 'completed')
+  const fallbackEvents = liveEvents.length === 0 && upcomingEvents.length === 0 ? completedEvents.slice(0, 6) : []
 
   return (
     <div className="relative bg-pitwall-surface border-b border-pitwall-border">
@@ -128,7 +169,36 @@ export default function EventStrip() {
         ref={scrollRef}
         className="hide-scrollbar flex gap-3 px-4 py-3 overflow-x-auto"
       >
-        {events.map((event) => (
+        {liveEvents.length > 0 && (
+          <div className="shrink-0 flex items-center">
+            <span className="text-[10px] font-semibold tracking-wide text-green-400 bg-green-400/10 border border-green-400/30 px-2 py-1 rounded-full">
+              LIVE NOW
+            </span>
+          </div>
+        )}
+        {upcomingEvents.length > 0 && (
+          <div className="shrink-0 flex items-center">
+            <span className="text-[10px] font-semibold tracking-wide text-pitwall-text-muted bg-pitwall-surface-2 border border-pitwall-border px-2 py-1 rounded-full">
+              UP NEXT
+            </span>
+          </div>
+        )}
+        {liveEvents.length === 0 && upcomingEvents.length === 0 && fallbackEvents.length > 0 && (
+          <div className="shrink-0 flex items-center">
+            <span className="text-[10px] font-semibold tracking-wide text-pitwall-text-muted bg-pitwall-surface-2 border border-pitwall-border px-2 py-1 rounded-full">
+              RECENTLY FINISHED
+            </span>
+          </div>
+        )}
+        {events.length === 0 && (
+          <div className="text-sm text-pitwall-text-muted py-2">No live or upcoming events available.</div>
+        )}
+        {(liveEvents.length > 0 || upcomingEvents.length > 0
+          ? [...liveEvents, ...upcomingEvents, ...completedEvents]
+          : fallbackEvents
+        ).map((event) => {
+          const seriesColor = event.seriesColor
+          return (
           <Link
             key={event.id}
             href={`/event/${event.seriesSlug}/${event.slug}`}
@@ -137,11 +207,11 @@ export default function EventStrip() {
             {/* Series color top border */}
             <div
               className="h-0.5 rounded-t-lg"
-              style={{ backgroundColor: event.seriesColor }}
+              style={{ backgroundColor: seriesColor }}
             />
             <div className="p-3 space-y-1.5">
               <div className="flex items-center justify-between">
-                <SeriesBadge name={event.seriesName} color={event.seriesColor} size="sm" />
+                <SeriesBadge name={event.seriesName} color={seriesColor} size="sm" />
                 <StatusIndicator status={event.status} />
               </div>
               <p className="text-sm font-semibold text-pitwall-text truncate group-hover:text-white transition-colors">
@@ -155,7 +225,8 @@ export default function EventStrip() {
               </p>
             </div>
           </Link>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
