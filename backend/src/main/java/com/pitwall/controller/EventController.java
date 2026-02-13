@@ -1,8 +1,10 @@
 package com.pitwall.controller;
 
 import com.pitwall.dto.EventDetailDto;
+import com.pitwall.dto.LapTelemetryDto;
 import com.pitwall.dto.ResultDto;
 import com.pitwall.service.EventService;
+import com.pitwall.service.LapTelemetryService;
 import com.pitwall.service.ResultService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,10 +22,12 @@ public class EventController {
 
     private final EventService eventService;
     private final ResultService resultService;
+    private final LapTelemetryService lapTelemetryService;
 
-    public EventController(EventService eventService, ResultService resultService) {
+    public EventController(EventService eventService, ResultService resultService, LapTelemetryService lapTelemetryService) {
         this.eventService = eventService;
         this.resultService = resultService;
+        this.lapTelemetryService = lapTelemetryService;
     }
 
     @GetMapping("/{slug}")
@@ -37,6 +41,16 @@ public class EventController {
             @RequestParam(required = false) Long sessionId) {
         if (sessionId != null) {
             return ResponseEntity.ok(resultService.findBySessionId(sessionId));
+        }
+        return ResponseEntity.ok(Collections.emptyList());
+    }
+
+    @GetMapping("/{slug}/telemetry")
+    public ResponseEntity<List<LapTelemetryDto>> getTelemetry(
+            @PathVariable String slug,
+            @RequestParam(required = false) Long sessionId) {
+        if (sessionId != null) {
+            return ResponseEntity.ok(lapTelemetryService.findBySessionId(sessionId));
         }
         return ResponseEntity.ok(Collections.emptyList());
     }
