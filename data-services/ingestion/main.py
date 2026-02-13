@@ -28,6 +28,10 @@ def previous_year() -> int:
     return current_year() - 1
 
 
+def next_year() -> int:
+    return current_year() + 1
+
+
 def update_event_statuses() -> None:
     """Update event statuses: upcoming -> live -> completed based on session times."""
     try:
@@ -143,6 +147,14 @@ def _season_has_events(series_slug: str, year: int) -> bool:
         return False
 
 
+def _sync_calendar_safely(ingester, series_slug: str, year: int) -> None:
+    """Sync a series calendar and continue on provider gaps/errors."""
+    try:
+        ingester.sync_calendar(year)
+    except Exception:
+        logger.warning("Could not sync %s %d calendar", series_slug.upper(), year, exc_info=True)
+
+
 def run_historical_sync(start_year: int, end_year: int) -> None:
     """Sync historical F1 seasons from start_year to end_year (inclusive)."""
     logger.info("Starting historical sync: %d to %d", start_year, end_year)
@@ -197,13 +209,12 @@ def run_initial_sync() -> None:
 
     prev = previous_year()
     curr = current_year()
+    nxt = next_year()
 
-    f1.sync_calendar(prev)
-    f1.sync_calendar(curr)
-    imsa.sync_calendar(prev)
-    imsa.sync_calendar(curr)
-    wec.sync_calendar(prev)
-    wec.sync_calendar(curr)
+    for year in [prev, curr, nxt]:
+        _sync_calendar_safely(f1, "f1", year)
+        _sync_calendar_safely(imsa, "imsa", year)
+        _sync_calendar_safely(wec, "wec", year)
 
     update_event_statuses()
 
@@ -223,6 +234,8 @@ def run_initial_sync() -> None:
     wec.sync_results_for_year(curr)
     imsa.sync_results_for_year(prev)
     imsa.sync_results_for_year(curr)
+    imsa.sync_lap_telemetry_for_year(prev)
+    imsa.sync_lap_telemetry_for_year(curr)
 
     feed.generate_upcoming_previews()
     logger.info("Initial data sync complete.")
@@ -248,11 +261,27 @@ def scheduled_results_check() -> None:
     wec.sync_results_for_year(current_year())
     imsa.sync_results_for_year(previous_year())
     imsa.sync_results_for_year(current_year())
+    imsa.sync_lap_telemetry_for_year(previous_year())
+    imsa.sync_lap_telemetry_for_year(current_year())
 
 
 def scheduled_generate_previews() -> None:
     logger.info("Running scheduled preview generation...")
     FeedGenerator().generate_upcoming_previews()
+
+
+def scheduled_calendar_refresh() -> None:
+    """Refresh current and next year calendars to keep upcoming events prepared."""
+    logger.info("Running scheduled calendar refresh...")
+    curr = current_year()
+    nxt = next_year()
+    f1 = F1Ingestion()
+    wec = WecIngestion()
+    imsa = ImsaIngestion()
+    for year in [curr, nxt]:
+        _sync_calendar_safely(f1, "f1", year)
+        _sync_calendar_safely(wec, "wec", year)
+        _sync_calendar_safely(imsa, "imsa", year)
 
 
 def main() -> None:
@@ -287,6 +316,7 @@ def main() -> None:
     schedule.every(5).minutes.do(scheduled_status_check)
     schedule.every(1).hours.do(scheduled_results_check)
     schedule.every(6).hours.do(scheduled_generate_previews)
+    schedule.every(24).hours.do(scheduled_calendar_refresh)
 
     logger.info("Scheduled tasks registered. Entering main loop...")
 
