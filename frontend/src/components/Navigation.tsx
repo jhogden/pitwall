@@ -9,7 +9,7 @@ const currentYear = new Date().getFullYear()
 
 const NAV_ITEMS = [
   { href: '/', label: 'Home', icon: Home },
-  { href: `/calendar/${currentYear}`, label: 'Calendar', icon: Calendar, activePrefix: '/calendar' },
+  { href: `/calendar/${currentYear}/all`, label: 'Calendar', icon: Calendar, activePrefix: '/calendar' },
   { href: '/series', label: 'Series', icon: Flag },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
