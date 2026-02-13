@@ -25,6 +25,65 @@ const EVENT_STATUS_STYLES: Record<string, string> = {
 const SESSION_PRIORITY = ['race', 'sprint', 'qualifying']
 const LIVE_POLL_INTERVAL_MS = 5000
 
+function parseTimingToSeconds(raw: string | null): number | null {
+  if (!raw) return null
+  const cleaned = raw.trim().replace(/^\+/, '')
+  if (!cleaned) return null
+  if (/[A-Za-z]/.test(cleaned)) return null
+  if (!/^\d+(?::\d+){0,2}(?:\.\d+)?$/.test(cleaned)) return null
+
+  const parts = cleaned.split(':').map(Number)
+  if (parts.some(Number.isNaN)) return null
+
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2]
+  if (parts.length === 2) return parts[0] * 60 + parts[1]
+  return parts[0]
+}
+
+function formatIntervalSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return ''
+  if (seconds >= 60) {
+    const minutes = Math.floor(seconds / 60)
+    const remainder = seconds - minutes * 60
+    return `+${minutes}:${remainder.toFixed(3).padStart(6, '0')}`
+  }
+  return `+${seconds.toFixed(3)}`
+}
+
+function computeClassIntervals(rows: Result[]): string[] {
+  if (rows.length === 0) return []
+  const intervals: string[] = ['']
+
+  for (let i = 1; i < rows.length; i += 1) {
+    const current = rows[i]
+    const previous = rows[i - 1]
+
+    if (
+      previous.laps !== null &&
+      current.laps !== null &&
+      current.laps < previous.laps
+    ) {
+      intervals.push(`+${previous.laps - current.laps}L`)
+      continue
+    }
+
+    const currentSeconds = parseTimingToSeconds(current.time)
+    const previousSeconds = parseTimingToSeconds(previous.time)
+    if (
+      currentSeconds !== null &&
+      previousSeconds !== null &&
+      currentSeconds >= previousSeconds
+    ) {
+      intervals.push(formatIntervalSeconds(currentSeconds - previousSeconds))
+      continue
+    }
+
+    intervals.push(current.gap || '')
+  }
+
+  return intervals
+}
+
 function pickDefaultSession(eventStatus: string, sessions: Session[]): Session | null {
   const nonPractice = sessions.filter(s => s.type !== 'practice')
   if (nonPractice.length === 0) return null
@@ -162,6 +221,10 @@ export default function EventDetailPage() {
   const resultSessions = event.sessions.filter(s => s.type !== 'practice')
   const raceSession = event.sessions.find(s => s.type === 'race')
   const seriesColor = resolveSeriesColor(event.series.slug, event.series.colorPrimary)
+  const useClassIntervals =
+    (event.series.slug === 'wec' || event.series.slug === 'imsa') &&
+    Boolean(selectedClass)
+  const classIntervals = useClassIntervals ? computeClassIntervals(results) : []
 
   return (
     <div>
@@ -255,13 +318,13 @@ export default function EventDetailPage() {
                 </div>
               ) : results.length > 0 ? (
                 <RaceResultCard
-                  results={results.map(r => ({
+                  results={results.map((r, idx) => ({
                     position: r.position,
                     driverName: r.driverName,
                     driverNumber: r.driverNumber,
                     teamName: r.teamName,
                     teamColor: r.teamColor,
-                    gap: r.gap,
+                    gap: useClassIntervals ? (classIntervals[idx] ?? r.gap) : r.gap,
                   }))}
                   eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
                 />
