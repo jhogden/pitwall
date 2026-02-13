@@ -8,6 +8,8 @@ from ingestion.main import (
     update_event_statuses,
     current_year,
     previous_year,
+    run_historical_sync,
+    _season_has_results,
 )
 
 
@@ -33,7 +35,7 @@ class TestGetEventSlugsNeedingResults(unittest.TestCase):
     def test_returns_empty_when_no_events(self, mock_db_session_fn):
         mock_db = MagicMock()
         mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
-        mock_db.query.return_value.join.return_value.filter.return_value.all.return_value = []
+        mock_db.query.return_value.join.return_value.join.return_value.filter.return_value.all.return_value = []
 
         result = get_event_slugs_needing_results(2025)
         self.assertEqual(result, [])
@@ -53,7 +55,7 @@ class TestGetEventSlugsNeedingResults(unittest.TestCase):
 
         # Build separate mock return values for each model query
         event_query = MagicMock()
-        event_query.join.return_value.filter.return_value.all.return_value = [mock_event]
+        event_query.join.return_value.join.return_value.filter.return_value.all.return_value = [mock_event]
 
         session_query = MagicMock()
         session_query.filter.return_value.all.return_value = [mock_session]
@@ -113,6 +115,108 @@ class TestUpdateEventStatuses(unittest.TestCase):
 
         update_event_statuses()
         self.assertEqual(past_event.status, "completed")
+
+
+class TestSeasonHasResults(unittest.TestCase):
+    """Tests for _season_has_results helper."""
+
+    @patch("ingestion.main.db_session")
+    def test_returns_false_when_no_season(self, mock_db_session_fn):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+
+        self.assertFalse(_season_has_results(1950))
+
+    @patch("ingestion.main.db_session")
+    def test_returns_false_when_no_events(self, mock_db_session_fn):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+
+        mock_season = MagicMock(id=1)
+
+        call_count = {"n": 0}
+
+        def query_side_effect(model):
+            model_name = getattr(model, "__name__", "")
+            mock_q = MagicMock()
+            if model_name == "Season":
+                mock_q.filter.return_value.first.return_value = mock_season
+            elif model_name == "Event":
+                mock_q.filter.return_value.all.return_value = []
+            return mock_q
+
+        mock_db.query.side_effect = query_side_effect
+
+        self.assertFalse(_season_has_results(1950))
+
+    @patch("ingestion.main.db_session")
+    def test_returns_true_when_results_exist(self, mock_db_session_fn):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+
+        mock_season = MagicMock(id=1)
+        mock_event = MagicMock(id=5)
+        mock_session = MagicMock(id=20)
+
+        def query_side_effect(model):
+            model_name = getattr(model, "__name__", "")
+            mock_q = MagicMock()
+            if model_name == "Season":
+                mock_q.filter.return_value.first.return_value = mock_season
+            elif model_name == "Event":
+                mock_q.filter.return_value.all.return_value = [mock_event]
+            elif model_name == "Session":
+                mock_q.filter.return_value.all.return_value = [mock_session]
+            elif model_name == "Result":
+                mock_q.filter.return_value.count.return_value = 22
+            return mock_q
+
+        mock_db.query.side_effect = query_side_effect
+
+        self.assertTrue(_season_has_results(1950))
+
+
+class TestRunHistoricalSync(unittest.TestCase):
+    """Tests for run_historical_sync."""
+
+    @patch("ingestion.main._season_has_results")
+    @patch("ingestion.main.F1Ingestion")
+    def test_syncs_years_without_results(self, mock_ingestion_cls, mock_has_results):
+        mock_ingestion = MagicMock()
+        mock_ingestion_cls.return_value = mock_ingestion
+        mock_has_results.return_value = False
+
+        run_historical_sync(1950, 1952)
+
+        self.assertEqual(mock_ingestion.sync_historical_season.call_count, 3)
+        mock_ingestion.sync_historical_season.assert_any_call(1950)
+        mock_ingestion.sync_historical_season.assert_any_call(1951)
+        mock_ingestion.sync_historical_season.assert_any_call(1952)
+
+    @patch("ingestion.main._season_has_results")
+    @patch("ingestion.main.F1Ingestion")
+    def test_skips_years_with_existing_results(self, mock_ingestion_cls, mock_has_results):
+        mock_ingestion = MagicMock()
+        mock_ingestion_cls.return_value = mock_ingestion
+        mock_has_results.side_effect = lambda y: y == 1951  # Only 1951 has results
+
+        run_historical_sync(1950, 1952)
+
+        self.assertEqual(mock_ingestion.sync_historical_season.call_count, 2)
+        mock_ingestion.sync_historical_season.assert_any_call(1950)
+        mock_ingestion.sync_historical_season.assert_any_call(1952)
+
+    @patch("ingestion.main._season_has_results")
+    @patch("ingestion.main.F1Ingestion")
+    def test_handles_sync_exception(self, mock_ingestion_cls, mock_has_results):
+        mock_ingestion = MagicMock()
+        mock_ingestion_cls.return_value = mock_ingestion
+        mock_has_results.return_value = False
+        mock_ingestion.sync_historical_season.side_effect = Exception("API error")
+
+        # Should not raise
+        run_historical_sync(1950, 1950)
 
 
 if __name__ == "__main__":
