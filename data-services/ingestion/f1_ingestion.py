@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -135,6 +136,20 @@ def _fetch_jolpica_results(year: int, round_number: int) -> Optional[list]:
         return races[0]["Results"]
     except Exception:
         logger.exception("Failed to fetch Jolpica results for %d Round %d", year, round_number)
+        return None
+
+
+def _fetch_jolpica_schedule(year: int) -> Optional[list]:
+    """Fetch the full season schedule from the Jolpica API."""
+    url = f"https://api.jolpi.ca/ergast/f1/{year}.json"
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+        races = data["MRData"]["RaceTable"]["Races"]
+        return races if races else None
+    except Exception:
+        logger.exception("Failed to fetch Jolpica schedule for %d", year)
         return None
 
 
@@ -359,3 +374,126 @@ class F1Ingestion:
                 laps=laps,
                 status=status,
             ))
+
+    def sync_calendar_from_jolpica(self, year: int) -> None:
+        """Sync calendar for a season using the Jolpica API (works for all years 1950+)."""
+        logger.info("Syncing F1 %d calendar from Jolpica...", year)
+        races = _fetch_jolpica_schedule(year)
+        if not races:
+            logger.warning("No Jolpica schedule data for %d", year)
+            return
+
+        with db_session() as db:
+            series = _get_series(db)
+            if not series:
+                return
+
+            season = _find_or_create_season(db, series.id, year)
+
+            for race in races:
+                round_number = int(race["round"])
+                race_name = race["raceName"]
+                circuit_info = race["Circuit"]
+                circuit_name = circuit_info["circuitName"]
+                country = circuit_info["Location"]["country"]
+
+                circuit = _find_or_create_circuit(db, circuit_name, country)
+                event_slug = slugify(f"{year}-{race_name}")
+
+                race_date_str = race.get("date")
+                race_date = datetime.strptime(race_date_str, "%Y-%m-%d").date() if race_date_str else None
+
+                event = db.query(Event).filter(Event.slug == event_slug).first()
+                if not event:
+                    event = Event(
+                        circuit_id=circuit.id,
+                        season_id=season.id,
+                        name=race_name,
+                        slug=event_slug,
+                        start_date=race_date,
+                        end_date=race_date,
+                        status="completed",
+                    )
+                    db.add(event)
+                    db.flush()
+                    logger.info("Created event: %s (Round %d)", race_name, round_number)
+
+                # Create a Race session if one doesn't exist
+                existing_session = db.query(Session).filter(
+                    Session.event_id == event.id, Session.name == "Race"
+                ).first()
+                if not existing_session:
+                    race_time_str = race.get("time")
+                    if race_date and race_time_str:
+                        start_time = datetime.strptime(
+                            f"{race_date_str} {race_time_str}", "%Y-%m-%d %H:%M:%SZ"
+                        ).replace(tzinfo=timezone.utc)
+                    elif race_date:
+                        start_time = datetime(race_date.year, race_date.month, race_date.day, 14, 0, tzinfo=timezone.utc)
+                    else:
+                        start_time = datetime(year, 1, 1, 14, 0, tzinfo=timezone.utc)
+
+                    db.add(Session(
+                        event_id=event.id,
+                        type="race",
+                        name="Race",
+                        start_time=start_time,
+                        status="completed",
+                    ))
+
+        logger.info("F1 %d Jolpica calendar sync complete.", year)
+
+    def sync_race_results(self, year: int, round_number: int, race_name: str) -> None:
+        """Sync race results for a single round using Jolpica. Requires the race name to find the event."""
+        event_slug = slugify(f"{year}-{race_name}")
+
+        with db_session() as db:
+            series = _get_series(db)
+            if not series:
+                return
+
+            event = db.query(Event).filter(Event.slug == event_slug).first()
+            if not event:
+                logger.warning("Event not found for slug: %s", event_slug)
+                return
+
+            race_session = db.query(Session).filter(
+                Session.event_id == event.id, Session.type == "race"
+            ).first()
+            if not race_session:
+                logger.warning("No race session for event: %s", event_slug)
+                return
+
+            existing_count = db.query(Result).filter(Result.session_id == race_session.id).count()
+            if existing_count > 0:
+                return
+
+            jolpica_results = _fetch_jolpica_results(year, round_number)
+            if not jolpica_results:
+                logger.warning("No Jolpica results for %d Round %d", year, round_number)
+                return
+
+            self._create_results_from_jolpica(db, series, jolpica_results, race_session)
+            race_session.status = "completed"
+            event.status = "completed"
+
+        logger.info("F1 %d Round %d results sync complete.", year, round_number)
+
+    def sync_historical_season(self, year: int) -> None:
+        """Sync calendar and all race results for a historical season."""
+        logger.info("Syncing historical season: %d", year)
+
+        self.sync_calendar_from_jolpica(year)
+
+        races = _fetch_jolpica_schedule(year)
+        if not races:
+            return
+
+        for race in races:
+            round_number = int(race["round"])
+            race_name = race["raceName"]
+            try:
+                self.sync_race_results(year, round_number, race_name)
+            except Exception:
+                logger.exception("Failed to sync results for %d Round %d", year, round_number)
+            time.sleep(2)

@@ -9,10 +9,18 @@ from ingestion.f1_ingestion import (
     slugify,
     _derive_positions_from_laps,
     _fetch_jolpica_results,
+    _fetch_jolpica_schedule,
     _find_or_create,
     _find_or_create_driver,
     F1Ingestion,
 )
+
+
+def _make_mock_db_session(mock_db):
+    @contextmanager
+    def fake_db_session():
+        yield mock_db
+    return fake_db_session
 
 
 class TestSlugify(unittest.TestCase):
@@ -336,6 +344,265 @@ class TestCreateResultsFromJolpica(unittest.TestCase):
 
         result = mock_db.add.call_args.args[0]
         self.assertEqual(result.laps, 57)
+
+
+class TestFetchJolpicaSchedule(unittest.TestCase):
+    """Tests for fetching season schedule from the Jolpica API."""
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_returns_races_for_valid_year(self, mock_get):
+        mock_get.return_value.json.return_value = {
+            "MRData": {
+                "RaceTable": {
+                    "Races": [
+                        {
+                            "round": "1",
+                            "raceName": "British Grand Prix",
+                            "Circuit": {
+                                "circuitName": "Silverstone",
+                                "Location": {"country": "UK", "locality": "Silverstone"},
+                            },
+                            "date": "1950-05-13",
+                        }
+                    ]
+                }
+            }
+        }
+
+        races = _fetch_jolpica_schedule(1950)
+        self.assertIsNotNone(races)
+        self.assertEqual(len(races), 1)
+        self.assertEqual(races[0]["raceName"], "British Grand Prix")
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_calls_correct_url(self, mock_get):
+        mock_get.return_value.json.return_value = {
+            "MRData": {"RaceTable": {"Races": []}}
+        }
+
+        _fetch_jolpica_schedule(1950)
+        mock_get.assert_called_once_with(
+            "https://api.jolpi.ca/ergast/f1/1950.json", timeout=30
+        )
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_returns_none_for_empty_races(self, mock_get):
+        mock_get.return_value.json.return_value = {
+            "MRData": {"RaceTable": {"Races": []}}
+        }
+
+        result = _fetch_jolpica_schedule(1949)
+        self.assertIsNone(result)
+
+    @patch("ingestion.f1_ingestion.requests.get")
+    def test_returns_none_on_error(self, mock_get):
+        mock_get.return_value.raise_for_status.side_effect = Exception("500")
+
+        result = _fetch_jolpica_schedule(1950)
+        self.assertIsNone(result)
+
+
+class TestSyncCalendarFromJolpica(unittest.TestCase):
+    """Tests for sync_calendar_from_jolpica."""
+
+    @patch("ingestion.f1_ingestion._fetch_jolpica_schedule")
+    @patch("ingestion.f1_ingestion.db_session")
+    def test_creates_event_and_session(self, mock_db_session_fn, mock_fetch):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+
+        mock_series = MagicMock(id=1)
+        mock_season = MagicMock(id=10)
+
+        # Use side_effect with enough entries for all .filter().first() calls:
+        # 1) _get_series (Series query)
+        # 2) _find_or_create_circuit -> _find_or_create (via filter_by, handled separately)
+        # 3) Event.slug lookup -> None (create new)
+        # 4) Session lookup -> None (create new)
+        mock_db.query.return_value.filter.return_value.first.side_effect = [
+            mock_series,  # _get_series
+            None,         # Event lookup
+            None,         # Session lookup
+        ]
+
+        # _find_or_create uses filter_by (for season and circuit)
+        mock_db.query.return_value.filter_by.return_value.first.return_value = mock_season
+
+        mock_fetch.return_value = [
+            {
+                "round": "1",
+                "raceName": "British Grand Prix",
+                "Circuit": {
+                    "circuitName": "Silverstone Circuit",
+                    "Location": {"country": "UK", "locality": "Silverstone"},
+                },
+                "date": "1950-05-13",
+            }
+        ]
+
+        ingestion = F1Ingestion()
+        ingestion.sync_calendar_from_jolpica(1950)
+
+        # Should have called db.add for circuit (from _find_or_create), event, and session
+        self.assertTrue(mock_db.add.call_count >= 2)
+
+    @patch("ingestion.f1_ingestion._fetch_jolpica_schedule")
+    def test_returns_early_when_no_schedule(self, mock_fetch):
+        mock_fetch.return_value = None
+
+        ingestion = F1Ingestion()
+        # Should not raise
+        ingestion.sync_calendar_from_jolpica(1949)
+
+
+class TestSyncRaceResults(unittest.TestCase):
+    """Tests for sync_race_results."""
+
+    @patch("ingestion.f1_ingestion._fetch_jolpica_results")
+    @patch("ingestion.f1_ingestion._find_or_create_driver")
+    @patch("ingestion.f1_ingestion._find_or_create_team")
+    @patch("ingestion.f1_ingestion.db_session")
+    def test_syncs_results_for_event(self, mock_db_session_fn, mock_team, mock_driver, mock_fetch_results):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+
+        mock_series = MagicMock(id=1)
+        mock_event = MagicMock(id=5, slug="1950-british-grand-prix")
+        mock_race_session = MagicMock(id=20)
+        mock_team.return_value = MagicMock(id=1)
+        mock_driver.return_value = MagicMock(id=10)
+
+        # Queries: _get_series, event lookup, race session lookup, result count
+        def query_side_effect(model):
+            model_name = getattr(model, "__name__", "")
+            mock_q = MagicMock()
+            if model_name == "Series":
+                mock_q.filter.return_value.first.return_value = mock_series
+            elif model_name == "Event":
+                mock_q.filter.return_value.first.return_value = mock_event
+            elif model_name == "Session":
+                mock_q.filter.return_value.first.return_value = mock_race_session
+            elif model_name == "Result":
+                mock_q.filter.return_value.count.return_value = 0
+            return mock_q
+
+        mock_db.query.side_effect = query_side_effect
+
+        mock_fetch_results.return_value = [
+            {
+                "position": "1",
+                "Driver": {"givenName": "Nino", "familyName": "Farina", "permanentNumber": None},
+                "Constructor": {"name": "Alfa Romeo"},
+                "laps": "70",
+                "status": "Finished",
+                "Time": {"time": "2:13:23.6"},
+            }
+        ]
+
+        ingestion = F1Ingestion()
+        ingestion.sync_race_results(1950, 1, "British Grand Prix")
+
+        mock_fetch_results.assert_called_once_with(1950, 1)
+        self.assertEqual(mock_event.status, "completed")
+
+    @patch("ingestion.f1_ingestion.db_session")
+    def test_skips_when_event_not_found(self, mock_db_session_fn):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+
+        mock_series = MagicMock(id=1)
+
+        def query_side_effect(model):
+            model_name = getattr(model, "__name__", "")
+            mock_q = MagicMock()
+            if model_name == "Series":
+                mock_q.filter.return_value.first.return_value = mock_series
+            else:
+                mock_q.filter.return_value.first.return_value = None
+            return mock_q
+
+        mock_db.query.side_effect = query_side_effect
+
+        ingestion = F1Ingestion()
+        ingestion.sync_race_results(1950, 1, "Nonexistent Grand Prix")
+
+    @patch("ingestion.f1_ingestion._fetch_jolpica_results")
+    @patch("ingestion.f1_ingestion.db_session")
+    def test_skips_when_results_already_exist(self, mock_db_session_fn, mock_fetch_results):
+        mock_db = MagicMock()
+        mock_db_session_fn.side_effect = _make_mock_db_session(mock_db)
+
+        mock_series = MagicMock(id=1)
+        mock_event = MagicMock(id=5)
+        mock_race_session = MagicMock(id=20)
+
+        def query_side_effect(model):
+            model_name = getattr(model, "__name__", "")
+            mock_q = MagicMock()
+            if model_name == "Series":
+                mock_q.filter.return_value.first.return_value = mock_series
+            elif model_name == "Event":
+                mock_q.filter.return_value.first.return_value = mock_event
+            elif model_name == "Session":
+                mock_q.filter.return_value.first.return_value = mock_race_session
+            elif model_name == "Result":
+                mock_q.filter.return_value.count.return_value = 22  # Already has results
+            return mock_q
+
+        mock_db.query.side_effect = query_side_effect
+
+        ingestion = F1Ingestion()
+        ingestion.sync_race_results(1950, 1, "British Grand Prix")
+
+        mock_fetch_results.assert_not_called()
+
+
+class TestSyncHistoricalSeason(unittest.TestCase):
+    """Tests for sync_historical_season."""
+
+    @patch("ingestion.f1_ingestion.time.sleep")
+    @patch("ingestion.f1_ingestion._fetch_jolpica_schedule")
+    def test_calls_calendar_and_results(self, mock_fetch_schedule, mock_sleep):
+        mock_fetch_schedule.return_value = [
+            {
+                "round": "1",
+                "raceName": "British Grand Prix",
+                "Circuit": {
+                    "circuitName": "Silverstone",
+                    "Location": {"country": "UK", "locality": "Silverstone"},
+                },
+                "date": "1950-05-13",
+            },
+            {
+                "round": "2",
+                "raceName": "Monaco Grand Prix",
+                "Circuit": {
+                    "circuitName": "Monte Carlo",
+                    "Location": {"country": "Monaco", "locality": "Monte Carlo"},
+                },
+                "date": "1950-05-21",
+            },
+        ]
+
+        ingestion = F1Ingestion()
+        with patch.object(ingestion, "sync_calendar_from_jolpica") as mock_cal, \
+             patch.object(ingestion, "sync_race_results") as mock_results:
+            ingestion.sync_historical_season(1950)
+
+            mock_cal.assert_called_once_with(1950)
+            self.assertEqual(mock_results.call_count, 2)
+            mock_results.assert_any_call(1950, 1, "British Grand Prix")
+            mock_results.assert_any_call(1950, 2, "Monaco Grand Prix")
+            self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("ingestion.f1_ingestion._fetch_jolpica_schedule")
+    def test_handles_no_schedule(self, mock_fetch_schedule):
+        # First call (in sync_calendar_from_jolpica) and second call return None
+        mock_fetch_schedule.return_value = None
+
+        ingestion = F1Ingestion()
+        with patch.object(ingestion, "sync_calendar_from_jolpica"):
+            ingestion.sync_historical_season(1949)
 
 
 if __name__ == "__main__":

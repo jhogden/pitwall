@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, BigInteger, String, Text, DateTime, Date, Integer,
+    Column, BigInteger, String, Text, DateTime, Date, Integer, Numeric,
     ForeignKey, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, relationship
@@ -133,6 +133,44 @@ class Result(Base):
 
     __table_args__ = (
         UniqueConstraint("session_id", "driver_id", name="uq_results_session_driver"),
+    )
+
+
+class DriverStanding(Base):
+    __tablename__ = "driver_standings"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    season_id = Column(BigInteger, ForeignKey("seasons.id"), nullable=False)
+    driver_id = Column(BigInteger, ForeignKey("drivers.id"), nullable=False)
+    position = Column(Integer, nullable=False)
+    points = Column(Numeric(8, 2), nullable=False, default=0)
+    wins = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    season = relationship("Season")
+    driver = relationship("Driver")
+
+    __table_args__ = (
+        UniqueConstraint("season_id", "driver_id", name="driver_standings_season_id_driver_id_key"),
+    )
+
+
+class ConstructorStanding(Base):
+    __tablename__ = "constructor_standings"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    season_id = Column(BigInteger, ForeignKey("seasons.id"), nullable=False)
+    team_id = Column(BigInteger, ForeignKey("teams.id"), nullable=False)
+    position = Column(Integer, nullable=False)
+    points = Column(Numeric(8, 2), nullable=False, default=0)
+    wins = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    season = relationship("Season")
+    team = relationship("Team")
+
+    __table_args__ = (
+        UniqueConstraint("season_id", "team_id", name="constructor_standings_season_id_team_id_key"),
     )
 
 
