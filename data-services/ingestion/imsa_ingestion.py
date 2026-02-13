@@ -51,6 +51,11 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def _normalize_class_name(raw: object) -> str:
+    value = str(raw or "").strip()
+    return value if value else "Overall"
+
+
 def _parse_event_name_from_dir(track_dir: str) -> str:
     decoded = unquote(track_dir).strip("/")
     return re.sub(r"^\d+_", "", decoded).strip()
@@ -108,6 +113,13 @@ def _extract_imsa_result_rows_from_json(payload: dict) -> list[dict]:
                 "car_number": int(number_raw),
                 "driver_name": display_name,
                 "team_name": str(row.get("team", "Unknown Team")).strip() or "Unknown Team",
+                "class_name": _normalize_class_name(
+                    row.get("class")
+                    or row.get("class_name")
+                    or row.get("group")
+                    or row.get("category")
+                    or row.get("vehicle_class")
+                ),
                 "laps": laps,
                 "time": str(row.get("elapsed_time", "")).strip() or None,
                 "gap": str(row.get("gap_first", "")).strip() or None,
@@ -149,6 +161,12 @@ def _extract_imsa_result_rows_from_csv(content: str) -> list[dict]:
                 "car_number": car_number,
                 "driver_name": driver_name,
                 "team_name": str(row.get("TEAM", "Unknown Team")).strip() or "Unknown Team",
+                "class_name": _normalize_class_name(
+                    row.get("CLASS")
+                    or row.get("CLASS_NAME")
+                    or row.get("GROUP")
+                    or row.get("CATEGORY")
+                ),
                 "laps": laps,
                 "time": str(row.get("TOTAL_TIME", "")).strip() or None,
                 "gap": str(row.get("GAP_FIRST", "")).strip() or None,
@@ -577,6 +595,7 @@ class ImsaIngestion:
                             time=row["time"],
                             gap=row["gap"],
                             status=row["status"],
+                            class_name=row["class_name"],
                         )
                     )
 

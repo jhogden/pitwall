@@ -126,13 +126,14 @@ class Result(Base):
     laps = Column(Integer)
     gap = Column(String(50))
     status = Column(String(50), nullable=False, default="finished")
+    class_name = Column(String(100), nullable=False, default="Overall")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     session = relationship("Session", back_populates="results")
     driver = relationship("Driver", back_populates="results")
 
     __table_args__ = (
-        UniqueConstraint("session_id", "driver_id", name="uq_results_session_driver"),
+        UniqueConstraint("session_id", "driver_id", "class_name", name="uq_results_session_driver_class_name"),
     )
 
 
@@ -145,13 +146,14 @@ class DriverStanding(Base):
     position = Column(Integer, nullable=False)
     points = Column(Numeric(8, 2), nullable=False, default=0)
     wins = Column(Integer, nullable=False, default=0)
+    class_name = Column(String(100), nullable=False, default="Overall")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     season = relationship("Season")
     driver = relationship("Driver")
 
     __table_args__ = (
-        UniqueConstraint("season_id", "driver_id", name="driver_standings_season_id_driver_id_key"),
+        UniqueConstraint("season_id", "driver_id", "class_name", name="driver_standings_season_driver_class_key"),
     )
 
 
@@ -164,13 +166,14 @@ class ConstructorStanding(Base):
     position = Column(Integer, nullable=False)
     points = Column(Numeric(8, 2), nullable=False, default=0)
     wins = Column(Integer, nullable=False, default=0)
+    class_name = Column(String(100), nullable=False, default="Overall")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     season = relationship("Season")
     team = relationship("Team")
 
     __table_args__ = (
-        UniqueConstraint("season_id", "team_id", name="constructor_standings_season_id_team_id_key"),
+        UniqueConstraint("season_id", "team_id", "class_name", name="constructor_standings_season_team_class_key"),
     )
 
 

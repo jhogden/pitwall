@@ -58,6 +58,11 @@ def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+def _normalize_class_name(raw: object) -> str:
+    value = str(raw or "").strip()
+    return value if value else "Overall"
+
+
 def _normalize_wec_name(name: str) -> str:
     clean = re.sub(r"\s+", " ", name).strip()
     clean = re.sub(r"\s+TBA$", "", clean, flags=re.IGNORECASE)
@@ -206,6 +211,7 @@ def _extract_wec_race_rows(html: str) -> list[dict]:
         total_time_idx = idx_for("total")
         gap_idx = idx_for("gap first") or idx_for("gap")
         status_idx = idx_for("status")
+        class_idx = idx_for("class") or idx_for("category") or idx_for("cat")
 
         if pos_idx is None or team_idx is None or drivers_idx is None:
             continue
@@ -240,6 +246,7 @@ def _extract_wec_race_rows(html: str) -> list[dict]:
                     "car_number": car_number,
                     "team_name": team_name,
                     "driver_name": primary_driver,
+                    "class_name": _normalize_class_name(vals[class_idx] if class_idx is not None and class_idx < len(vals) else None),
                     "laps": int(vals[laps_idx]) if laps_idx is not None and laps_idx < len(vals) and vals[laps_idx].isdigit() else None,
                     "time": vals[total_time_idx] if total_time_idx is not None and total_time_idx < len(vals) else None,
                     "gap": vals[gap_idx] if gap_idx is not None and gap_idx < len(vals) else None,
@@ -428,6 +435,7 @@ class WecIngestion:
                             time=row["time"],
                             gap=row["gap"],
                             status=row["status"] or "Classified",
+                            class_name=row["class_name"],
                         )
                     )
 

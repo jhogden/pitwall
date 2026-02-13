@@ -8,6 +8,7 @@ import schedule
 from ingestion.f1_ingestion import F1Ingestion
 from ingestion.imsa_ingestion import ImsaIngestion
 from ingestion.wec_ingestion import WecIngestion
+from ingestion.standings_ingestion import StandingsIngestion
 from ingestion.feed_generator import FeedGenerator
 from ingestion.config import db_session
 from ingestion.models import Event, Session, Result, Season, Series
@@ -206,6 +207,7 @@ def run_initial_sync() -> None:
     imsa = ImsaIngestion()
     wec = WecIngestion()
     feed = FeedGenerator()
+    standings = StandingsIngestion()
 
     prev = previous_year()
     curr = current_year()
@@ -236,6 +238,8 @@ def run_initial_sync() -> None:
     imsa.sync_results_for_year(curr)
     imsa.sync_lap_telemetry_for_year(prev)
     imsa.sync_lap_telemetry_for_year(curr)
+    standings.sync_all_for_year(prev)
+    standings.sync_all_for_year(curr)
 
     feed.generate_upcoming_previews()
     logger.info("Initial data sync complete.")
@@ -251,6 +255,7 @@ def scheduled_results_check() -> None:
     f1 = F1Ingestion()
     wec = WecIngestion()
     imsa = ImsaIngestion()
+    standings = StandingsIngestion()
     for year in [previous_year(), current_year()]:
         missing_slugs = get_event_slugs_needing_results(year, series_slug="f1")
         for slug in missing_slugs:
@@ -263,6 +268,8 @@ def scheduled_results_check() -> None:
     imsa.sync_results_for_year(current_year())
     imsa.sync_lap_telemetry_for_year(previous_year())
     imsa.sync_lap_telemetry_for_year(current_year())
+    standings.sync_all_for_year(previous_year())
+    standings.sync_all_for_year(current_year())
 
 
 def scheduled_generate_previews() -> None:

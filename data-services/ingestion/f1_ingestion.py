@@ -340,6 +340,7 @@ class F1Ingestion:
                 driver_id=driver.id,
                 position=position,
                 status=status,
+                class_name="Overall",
             ))
 
     def _create_results_from_jolpica(
@@ -373,6 +374,7 @@ class F1Ingestion:
                 gap=gap,
                 laps=laps,
                 status=status,
+                class_name="Overall",
             ))
 
     def sync_calendar_from_jolpica(self, year: int) -> None:
