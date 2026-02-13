@@ -38,9 +38,23 @@ public class EventController {
     @GetMapping("/{slug}/results")
     public ResponseEntity<List<ResultDto>> getResults(
             @PathVariable String slug,
+            @RequestParam(required = false) Long sessionId,
+            @RequestParam(required = false) String className) {
+        if (sessionId != null) {
+            if (className != null && !className.isBlank()) {
+                return ResponseEntity.ok(resultService.findBySessionIdAndClassName(sessionId, className));
+            }
+            return ResponseEntity.ok(resultService.findBySessionId(sessionId));
+        }
+        return ResponseEntity.ok(Collections.emptyList());
+    }
+
+    @GetMapping("/{slug}/result-classes")
+    public ResponseEntity<List<String>> getResultClasses(
+            @PathVariable String slug,
             @RequestParam(required = false) Long sessionId) {
         if (sessionId != null) {
-            return ResponseEntity.ok(resultService.findBySessionId(sessionId));
+            return ResponseEntity.ok(resultService.findResultClasses(sessionId));
         }
         return ResponseEntity.ok(Collections.emptyList());
     }

@@ -25,4 +25,16 @@ public class ResultService {
                 .map(resultMapper::toDto)
                 .toList();
     }
+
+    public List<ResultDto> findBySessionIdAndClassName(Long sessionId, String className) {
+        return resultRepository.findBySessionIdAndClassNameOrderByPosition(sessionId, className).stream()
+                .map(resultMapper::toDto)
+                .toList();
+    }
+
+    public List<String> findResultClasses(Long sessionId) {
+        return resultRepository.findDistinctClassNamesBySessionId(sessionId).stream()
+                .filter(name -> name != null && !name.isBlank())
+                .toList();
+    }
 }

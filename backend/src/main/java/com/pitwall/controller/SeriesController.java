@@ -40,16 +40,26 @@ public class SeriesController {
     @GetMapping("/{slug}/standings")
     public ResponseEntity<List<StandingDto>> getDriverStandings(
             @PathVariable String slug,
-            @RequestParam(defaultValue = "0") int year) {
+            @RequestParam(defaultValue = "0") int year,
+            @RequestParam(required = false) String className) {
         int effectiveYear = year > 0 ? year : Year.now().getValue();
-        return ResponseEntity.ok(standingsService.findDriverStandings(slug, effectiveYear));
+        return ResponseEntity.ok(standingsService.findDriverStandings(slug, effectiveYear, className));
     }
 
     @GetMapping("/{slug}/constructors")
     public ResponseEntity<List<ConstructorStandingDto>> getConstructorStandings(
             @PathVariable String slug,
+            @RequestParam(defaultValue = "0") int year,
+            @RequestParam(required = false) String className) {
+        int effectiveYear = year > 0 ? year : Year.now().getValue();
+        return ResponseEntity.ok(standingsService.findConstructorStandings(slug, effectiveYear, className));
+    }
+
+    @GetMapping("/{slug}/classes")
+    public ResponseEntity<List<String>> getStandingClasses(
+            @PathVariable String slug,
             @RequestParam(defaultValue = "0") int year) {
         int effectiveYear = year > 0 ? year : Year.now().getValue();
-        return ResponseEntity.ok(standingsService.findConstructorStandings(slug, effectiveYear));
+        return ResponseEntity.ok(standingsService.findAvailableClasses(slug, effectiveYear));
     }
 }

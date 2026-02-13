@@ -43,6 +43,9 @@ public class Result {
     @Column(name = "status")
     private String status;
 
+    @Column(name = "class_name")
+    private String className;
+
     @Column(name = "created_at")
     private Instant createdAt;
 
@@ -111,6 +114,14 @@ public class Result {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getClassName() {
+        return className;
+    }
+
+    public void setClassName(String className) {
+        this.className = className;
     }
 
     public Instant getCreatedAt() {

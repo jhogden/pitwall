@@ -11,7 +11,9 @@ import com.pitwall.repository.DriverStandingRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @Transactional(readOnly = true)
@@ -26,20 +28,33 @@ public class StandingsService {
         this.constructorStandingRepository = constructorStandingRepository;
     }
 
+    public List<StandingDto> findDriverStandings(String seriesSlug, int year, String className) {
+        List<DriverStanding> standings = (className != null && !className.isBlank())
+                ? driverStandingRepository.findBySeasonSeriesSlugAndSeasonYearAndClassNameOrderByPositionAsc(seriesSlug, year, className)
+                : driverStandingRepository.findBySeasonSeriesSlugAndSeasonYearOrderByPositionAsc(seriesSlug, year);
+        return standings.stream().map(this::toDriverStandingDto).toList();
+    }
+
     public List<StandingDto> findDriverStandings(String seriesSlug, int year) {
-        return driverStandingRepository
-                .findBySeasonSeriesSlugAndSeasonYearOrderByPositionAsc(seriesSlug, year)
-                .stream()
-                .map(this::toDriverStandingDto)
-                .toList();
+        return findDriverStandings(seriesSlug, year, null);
+    }
+
+    public List<ConstructorStandingDto> findConstructorStandings(String seriesSlug, int year, String className) {
+        List<ConstructorStanding> standings = (className != null && !className.isBlank())
+                ? constructorStandingRepository.findBySeasonSeriesSlugAndSeasonYearAndClassNameOrderByPositionAsc(seriesSlug, year, className)
+                : constructorStandingRepository.findBySeasonSeriesSlugAndSeasonYearOrderByPositionAsc(seriesSlug, year);
+        return standings.stream().map(this::toConstructorStandingDto).toList();
     }
 
     public List<ConstructorStandingDto> findConstructorStandings(String seriesSlug, int year) {
-        return constructorStandingRepository
-                .findBySeasonSeriesSlugAndSeasonYearOrderByPositionAsc(seriesSlug, year)
-                .stream()
-                .map(this::toConstructorStandingDto)
-                .toList();
+        return findConstructorStandings(seriesSlug, year, null);
+    }
+
+    public List<String> findAvailableClasses(String seriesSlug, int year) {
+        Set<String> classes = new LinkedHashSet<>();
+        classes.addAll(driverStandingRepository.findDistinctClassNamesBySeason(seriesSlug, year));
+        classes.addAll(constructorStandingRepository.findDistinctClassNamesBySeason(seriesSlug, year));
+        return classes.stream().filter(name -> name != null && !name.isBlank()).toList();
     }
 
     private StandingDto toDriverStandingDto(DriverStanding standing) {
@@ -52,6 +67,7 @@ public class StandingsService {
                 driver.getNumber(),
                 team != null ? team.getName() : null,
                 team != null ? team.getColor() : null,
+                standing.getClassName(),
                 standing.getPoints().doubleValue(),
                 standing.getWins()
         );
@@ -63,6 +79,7 @@ public class StandingsService {
                 standing.getPosition(),
                 team.getName(),
                 team.getColor(),
+                standing.getClassName(),
                 standing.getPoints().doubleValue(),
                 standing.getWins()
         );

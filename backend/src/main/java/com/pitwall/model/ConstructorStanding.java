@@ -38,6 +38,9 @@ public class ConstructorStanding {
     @Column(name = "wins")
     private Integer wins;
 
+    @Column(name = "class_name")
+    private String className;
+
     @Column(name = "created_at")
     private Instant createdAt;
 
@@ -90,6 +93,14 @@ public class ConstructorStanding {
 
     public void setWins(Integer wins) {
         this.wins = wins;
+    }
+
+    public String getClassName() {
+        return className;
+    }
+
+    public void setClassName(String className) {
+        this.className = className;
     }
 
     public Instant getCreatedAt() {

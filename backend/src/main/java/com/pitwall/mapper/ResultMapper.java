@@ -19,6 +19,7 @@ public class ResultMapper {
                 driver.getNumber(),
                 team != null ? team.getName() : null,
                 team != null ? team.getColor() : null,
+                result.getClassName(),
                 result.getTime(),
                 result.getLaps(),
                 result.getGap(),
