@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { SERIES_COLORS } from '@/lib/constants'
 
 const AVAILABLE_SERIES = [
-  { slug: 'f1', name: 'Formula 1', color: '#E10600' },
-  { slug: 'wec', name: 'WEC', color: '#00548F' },
-  { slug: 'imsa', name: 'IMSA', color: '#DA291C' },
+  { slug: 'f1', name: 'Formula 1', color: SERIES_COLORS.f1 },
+  { slug: 'wec', name: 'WEC', color: SERIES_COLORS.wec },
+  { slug: 'imsa', name: 'IMSA', color: SERIES_COLORS.imsa },
 ]
 
 interface Preferences {

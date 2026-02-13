@@ -18,7 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, List, Grid3X3, ChevronDown } from 'lucide-react'
 import SeriesBadge from '@/components/SeriesBadge'
 import LiveIndicator from '@/components/LiveIndicator'
-import { SERIES_FILTERS, STATUS_STYLES } from '@/lib/constants'
+import { resolveSeriesColor, SERIES_FILTERS, STATUS_STYLES } from '@/lib/constants'
 import { api } from '@/lib/api'
 import type { EventSummary } from '@/lib/api'
 
@@ -217,7 +217,9 @@ export default function CalendarPage() {
             <div key={month}>
               <h2 className="text-lg font-semibold text-pitwall-text-muted mb-3">{month}</h2>
               <div className="space-y-2">
-                {monthEvents.map(event => (
+                {monthEvents.map(event => {
+                  const seriesColor = resolveSeriesColor(event.seriesSlug, event.seriesColor)
+                  return (
                   <Link
                     key={event.id}
                     href={`/event/${event.seriesSlug}/${event.slug}`}
@@ -225,11 +227,11 @@ export default function CalendarPage() {
                   >
                     <div
                       className="w-1 h-12 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: event.seriesColor }}
+                      style={{ backgroundColor: seriesColor }}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <SeriesBadge name={event.seriesName} color={event.seriesColor} size="sm" />
+                        <SeriesBadge name={event.seriesName} color={seriesColor} size="sm" />
                         <span className="text-sm text-pitwall-text-muted">{event.country}</span>
                       </div>
                       <p className="font-semibold text-pitwall-text truncate">{event.name}</p>
@@ -246,7 +248,8 @@ export default function CalendarPage() {
                       </span>
                     </div>
                   </Link>
-                ))}
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -299,19 +302,22 @@ export default function CalendarPage() {
                 >
                   <span className="text-xs text-pitwall-text-muted">{format(day, 'd')}</span>
                   <div className="mt-1 space-y-1">
-                    {dayEvents.map(event => (
+                    {dayEvents.map(event => {
+                      const seriesColor = resolveSeriesColor(event.seriesSlug, event.seriesColor)
+                      return (
                       <Link
                         key={event.id}
                         href={`/event/${event.seriesSlug}/${event.slug}`}
                         className="block text-xs truncate px-1 py-0.5 rounded"
                         style={{
-                          backgroundColor: `${event.seriesColor}20`,
-                          color: event.seriesColor,
+                          backgroundColor: `${seriesColor}20`,
+                          color: seriesColor,
                         }}
                       >
                         {event.name}
                       </Link>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )

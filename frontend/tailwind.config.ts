@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import { PITWALL_COLORS, SERIES_THEME_COLORS } from './src/lib/theme'
 
 const config: Config = {
   content: [
@@ -8,17 +9,17 @@ const config: Config = {
     extend: {
       colors: {
         pitwall: {
-          bg: '#0a0a0f',
-          surface: '#141420',
-          'surface-2': '#1e1e2e',
-          border: '#2a2a3a',
-          text: '#e4e4ef',
-          'text-muted': '#8888a0',
-          accent: '#6366f1',
+          bg: PITWALL_COLORS.bg,
+          surface: PITWALL_COLORS.surface,
+          'surface-2': PITWALL_COLORS.surface2,
+          border: PITWALL_COLORS.border,
+          text: PITWALL_COLORS.text,
+          'text-muted': PITWALL_COLORS.textMuted,
+          accent: PITWALL_COLORS.accent,
         },
-        f1: '#E10600',
-        wec: '#00548F',
-        imsa: '#DA291C',
+        f1: SERIES_THEME_COLORS.f1,
+        wec: SERIES_THEME_COLORS.wec,
+        imsa: SERIES_THEME_COLORS.imsa,
       },
       fontFamily: {
         mono: ['JetBrains Mono', 'Fira Code', 'monospace'],

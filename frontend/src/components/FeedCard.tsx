@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import type { FeedItem } from '@/lib/api'
 import SeriesBadge from '@/components/SeriesBadge'
 import Link from 'next/link'
+import { resolveSeriesColor } from '@/lib/constants'
 
 interface FeedCardProps {
   item: FeedItem
@@ -35,7 +36,7 @@ function relativeTime(dateStr: string): string {
 }
 
 export default function FeedCard({ item }: FeedCardProps) {
-  const accentColor = item.seriesColor || '#6366f1'
+  const accentColor = resolveSeriesColor(item.seriesSlug, item.seriesColor)
   const isRaceResult = item.type === 'race_result'
   const isHighlight = item.type === 'highlight'
 
@@ -55,8 +56,8 @@ export default function FeedCard({ item }: FeedCardProps) {
       <div className="flex-1 min-w-0 p-4">
         {/* Header row */}
         <div className="flex items-center gap-2 mb-2">
-          {item.seriesName && item.seriesColor && (
-            <SeriesBadge name={item.seriesName} color={item.seriesColor} size="sm" />
+          {item.seriesName && (
+            <SeriesBadge name={item.seriesName} color={accentColor} size="sm" />
           )}
           <span className="flex items-center gap-1 ml-auto text-xs text-pitwall-text-muted shrink-0">
             {getTypeIcon(item.type)}

@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
+import { SERIES_COLORS } from '@/lib/constants'
 
 const SERIES_LIST = [
   {
     slug: 'f1',
     name: 'Formula 1',
-    color: '#E10600',
+    color: SERIES_COLORS.f1,
     description: 'The pinnacle of single-seater motorsport. 24 races across the globe featuring the fastest cars and most skilled drivers in the world.',
     teams: 10,
     races: 24,
@@ -14,7 +15,7 @@ const SERIES_LIST = [
   {
     slug: 'wec',
     name: 'FIA World Endurance Championship',
-    color: '#00548F',
+    color: SERIES_COLORS.wec,
     description: 'The premier endurance racing series including the legendary 24 Hours of Le Mans. Multiple car classes racing together for hours at a time.',
     teams: 16,
     races: 8,
@@ -22,7 +23,7 @@ const SERIES_LIST = [
   {
     slug: 'imsa',
     name: 'IMSA SportsCar Championship',
-    color: '#DA291C',
+    color: SERIES_COLORS.imsa,
     description: 'North American endurance and sprint racing featuring prototypes and GT cars at iconic circuits like Daytona, Sebring, and Road America.',
     teams: 20,
     races: 11,
