@@ -140,7 +140,6 @@ export default function EventDetailPage() {
         setAvailableClasses(filtered)
         setSelectedClass(prev => {
           if (prev && filtered.includes(prev)) return prev
-          if (isClassBasedSeries && filtered.length > 0) return filtered[0]
           return null
         })
       })
@@ -297,12 +296,13 @@ export default function EventDetailPage() {
                     </button>
                   ))}
                 </div>
-                {availableClasses.length > 1 && (
+                {isClassBasedSeries && availableClasses.length > 0 && (
                   <select
-                    value={selectedClass || ''}
-                    onChange={(e) => setSelectedClass(e.target.value || null)}
+                    value={selectedClass ?? '__all__'}
+                    onChange={(e) => setSelectedClass(e.target.value === '__all__' ? null : e.target.value)}
                     className="bg-pitwall-surface border border-pitwall-border rounded px-3 py-1.5 text-sm text-pitwall-text"
                   >
+                    <option value="__all__">All classes</option>
                     {availableClasses.map(className => (
                       <option key={className} value={className}>{className}</option>
                     ))}

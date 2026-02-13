@@ -43,42 +43,38 @@ export default function RaceResultCard({ results, eventName }: RaceResultCardPro
         </h4>
       </div>
 
+      <div className="grid grid-cols-[2.5rem,1fr,4rem,5.5rem] gap-3 px-3 py-2 border-b border-pitwall-border text-[10px] font-semibold uppercase tracking-wide text-pitwall-text-muted">
+        <span className="text-right">Pos</span>
+        <span>Driver</span>
+        <span className="text-right">Car</span>
+        <span className="text-right">Interval</span>
+      </div>
+
       <div className="divide-y divide-pitwall-border/50">
         {displayedResults.map((entry, i) => (
           <div
             key={entry.position}
-            className={`flex items-center gap-3 px-3 py-1.5 text-sm ${positionBg(entry.position)} ${i % 2 === 1 ? 'bg-pitwall-surface/30' : ''}`}
+            className={`grid grid-cols-[2.5rem,1fr,4rem,5.5rem] items-center gap-3 px-3 py-1.5 text-sm ${positionBg(entry.position)} ${i % 2 === 1 ? 'bg-pitwall-surface/30' : ''}`}
           >
-            {/* Position */}
-            <span className={`font-mono font-bold w-6 text-right text-sm ${positionColor(entry.position)}`}>
+            <span className={`font-mono font-bold text-right text-sm ${positionColor(entry.position)}`}>
               {entry.position}
             </span>
 
-            {/* Team color dot */}
-            <span
-              className="h-2.5 w-1 rounded-full shrink-0"
-              style={{ backgroundColor: entry.teamColor }}
-            />
-
-            {/* Driver info */}
-            <div className="flex-1 min-w-0 flex items-center gap-2">
+            <div className="min-w-0 flex items-center gap-2">
+              <span
+                className="h-2.5 w-1 rounded-full shrink-0"
+                style={{ backgroundColor: entry.teamColor }}
+              />
               <span className="text-pitwall-text font-medium truncate">
                 {entry.driverName}
               </span>
-              {entry.driverNumber !== null && (
-                <span className="font-mono text-xs text-pitwall-text-muted">
-                  #{entry.driverNumber}
-                </span>
-              )}
             </div>
 
-            {/* Team name */}
-            <span className="hidden sm:block text-xs text-pitwall-text-muted truncate max-w-[120px]">
-              {entry.teamName}
+            <span className="font-mono text-xs text-pitwall-text-muted text-right">
+              {entry.driverNumber !== null ? `#${entry.driverNumber}` : '—'}
             </span>
 
-            {/* Gap */}
-            <span className="font-mono text-xs text-pitwall-text-muted w-20 text-right shrink-0">
+            <span className="font-mono text-xs text-pitwall-text-muted text-right">
               {entry.position === 1 ? '' : entry.gap || ''}
             </span>
           </div>
