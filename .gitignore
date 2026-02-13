@@ -31,3 +31,5 @@ __pycache__/
 
 # Docker
 docker-compose.override.yml
+
+frontend/tsconfig.tsbuildinfo
