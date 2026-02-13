@@ -11,6 +11,7 @@ import SessionTimeline from '@/components/SessionTimeline'
 import RaceResultCard from '@/components/RaceResultCard'
 import TelemetryLiteCard from '@/components/TelemetryLiteCard'
 import { SESSION_TYPE_LABELS, STATUS_STYLES } from '@/lib/constants'
+import { resolveSeriesColor } from '@/lib/constants'
 import { api } from '@/lib/api'
 import type { EventDetail, LapTelemetryPoint, Result, Session } from '@/lib/api'
 
@@ -50,6 +51,10 @@ export default function EventDetailPage() {
   const [isLoadingResults, setIsLoadingResults] = useState(false)
   const [telemetry, setTelemetry] = useState<LapTelemetryPoint[]>([])
   const [isLoadingTelemetry, setIsLoadingTelemetry] = useState(false)
+  const [availableClasses, setAvailableClasses] = useState<string[]>([])
+  const [selectedClass, setSelectedClass] = useState<string | null>(null)
+
+  const isClassBasedSeries = event?.series.slug === 'wec' || event?.series.slug === 'imsa'
 
   useEffect(() => {
     api.getEvent(slug)
@@ -65,11 +70,36 @@ export default function EventDetailPage() {
     if (!selectedSession) {
       setResults([])
       setTelemetry([])
+      setAvailableClasses([])
+      setSelectedClass(null)
+      return
+    }
+
+    api.getResultClasses(slug, selectedSession.id)
+      .then(classes => {
+        const filtered = classes.filter(Boolean)
+        setAvailableClasses(filtered)
+        setSelectedClass(prev => {
+          if (prev && filtered.includes(prev)) return prev
+          if (isClassBasedSeries && filtered.length > 0) return filtered[0]
+          return null
+        })
+      })
+      .catch(() => {
+        setAvailableClasses([])
+        setSelectedClass(null)
+      })
+  }, [event?.series.slug, isClassBasedSeries, selectedSession, slug])
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setResults([])
+      setTelemetry([])
       return
     }
 
     setIsLoadingResults(true)
-    api.getResults(slug, selectedSession.id)
+    api.getResults(slug, selectedSession.id, selectedClass || undefined)
       .then(setResults)
       .catch(() => setResults([]))
       .finally(() => setIsLoadingResults(false))
@@ -79,7 +109,7 @@ export default function EventDetailPage() {
       .then(setTelemetry)
       .catch(() => setTelemetry([]))
       .finally(() => setIsLoadingTelemetry(false))
-  }, [slug, selectedSession])
+  }, [selectedClass, selectedSession, slug])
 
   useEffect(() => {
     if (!event || event.status !== 'live') return
@@ -103,7 +133,7 @@ export default function EventDetailPage() {
         }
 
         const [nextResults, nextTelemetry] = await Promise.all([
-          api.getResults(slug, selectedSession.id).catch(() => null),
+          api.getResults(slug, selectedSession.id, selectedClass || undefined).catch(() => null),
           api.getTelemetry(slug, selectedSession.id).catch(() => null),
         ])
 
@@ -117,7 +147,7 @@ export default function EventDetailPage() {
     pollLiveData()
     const intervalId = setInterval(pollLiveData, LIVE_POLL_INTERVAL_MS)
     return () => clearInterval(intervalId)
-  }, [event?.status, selectedSession, slug])
+  }, [event?.status, selectedClass, selectedSession, slug])
 
   if (!event) {
     return (
@@ -131,6 +161,7 @@ export default function EventDetailPage() {
   const eventYear = parseISO(event.startDate).getFullYear()
   const resultSessions = event.sessions.filter(s => s.type !== 'practice')
   const raceSession = event.sessions.find(s => s.type === 'race')
+  const seriesColor = resolveSeriesColor(event.series.slug, event.series.colorPrimary)
 
   return (
     <div>
@@ -145,14 +176,14 @@ export default function EventDetailPage() {
       <div
         className="rounded-xl p-6 mb-6 border"
         style={{
-          borderColor: `${event.series.colorPrimary}30`,
-          background: `linear-gradient(135deg, ${event.series.colorPrimary}08, transparent)`,
+          borderColor: `${seriesColor}30`,
+          background: `linear-gradient(135deg, ${seriesColor}08, transparent)`,
         }}
       >
         <div className="flex items-start justify-between mb-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <SeriesBadge name={event.series.name} color={event.series.colorPrimary} />
+              <SeriesBadge name={event.series.name} color={seriesColor} />
               <span className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${EVENT_STATUS_STYLES[event.status] || ''}`}>
                 {event.status === 'live' && <LiveIndicator />}
                 {event.status === 'live' ? 'LIVE' : event.status}
@@ -203,6 +234,17 @@ export default function EventDetailPage() {
                     </button>
                   ))}
                 </div>
+                {availableClasses.length > 1 && (
+                  <select
+                    value={selectedClass || ''}
+                    onChange={(e) => setSelectedClass(e.target.value || null)}
+                    className="bg-pitwall-surface border border-pitwall-border rounded px-3 py-1.5 text-sm text-pitwall-text"
+                  >
+                    {availableClasses.map(className => (
+                      <option key={className} value={className}>{className}</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {isLoadingResults ? (

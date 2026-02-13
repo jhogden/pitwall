@@ -86,6 +86,7 @@ export interface Result {
   driverNumber: number | null
   teamName: string
   teamColor: string
+  className: string
   time: string | null
   laps: number | null
   gap: string | null
@@ -112,6 +113,27 @@ export interface LapTelemetryPoint {
   lapTimestamp: string | null
   isValid: boolean | null
   crossingPitFinishLane: boolean | null
+}
+
+export interface DriverStanding {
+  position: number
+  driverName: string
+  driverSlug: string
+  driverNumber: number | null
+  teamName: string | null
+  teamColor: string | null
+  className: string
+  points: number
+  wins: number
+}
+
+export interface ConstructorStanding {
+  position: number
+  teamName: string
+  teamColor: string | null
+  className: string
+  points: number
+  wins: number
 }
 
 export interface FeedItem {
@@ -156,8 +178,30 @@ export const api = {
   getEvent: (slug: string) => fetchApi<EventDetail>(`/api/events/${slug}`),
   getFeed: (page = 0, size = 20, series?: string) =>
     fetchApi<FeedPage>(`/api/feed?page=${page}&size=${size}${series ? `&series=${series}` : ''}`),
-  getResults: (slug: string, sessionId: number) => fetchApi<Result[]>(`/api/events/${slug}/results?sessionId=${sessionId}`),
+  getResults: (slug: string, sessionId: number, className?: string) => {
+    const params = new URLSearchParams({ sessionId: String(sessionId) })
+    if (className) params.set('className', className)
+    return fetchApi<Result[]>(`/api/events/${slug}/results?${params.toString()}`)
+  },
+  getResultClasses: (slug: string, sessionId: number) =>
+    fetchApi<string[]>(`/api/events/${slug}/result-classes?sessionId=${sessionId}`),
   getTelemetry: (slug: string, sessionId: number) =>
     fetchApi<LapTelemetryPoint[]>(`/api/events/${slug}/telemetry?sessionId=${sessionId}`),
+  getDriverStandings: (slug: string, year?: number, className?: string) => {
+    const params = new URLSearchParams()
+    if (year) params.set('year', String(year))
+    if (className) params.set('className', className)
+    const qs = params.toString()
+    return fetchApi<DriverStanding[]>(`/api/series/${slug}/standings${qs ? `?${qs}` : ''}`)
+  },
+  getConstructorStandings: (slug: string, year?: number, className?: string) => {
+    const params = new URLSearchParams()
+    if (year) params.set('year', String(year))
+    if (className) params.set('className', className)
+    const qs = params.toString()
+    return fetchApi<ConstructorStanding[]>(`/api/series/${slug}/constructors${qs ? `?${qs}` : ''}`)
+  },
+  getStandingClasses: (slug: string, year?: number) =>
+    fetchApi<string[]>(`/api/series/${slug}/classes${year ? `?year=${year}` : ''}`),
   getDriver: (slug: string) => fetchApi<Driver>(`/api/drivers/${slug}`),
 }
