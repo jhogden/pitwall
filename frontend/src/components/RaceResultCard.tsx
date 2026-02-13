@@ -1,3 +1,7 @@
+'use client'
+
+import { useState } from 'react'
+
 interface RaceResultEntry {
   position: number
   driverName: string
@@ -27,7 +31,9 @@ function positionBg(position: number): string {
 }
 
 export default function RaceResultCard({ results, eventName }: RaceResultCardProps) {
-  const top10 = results.slice(0, 10)
+  const [showAll, setShowAll] = useState(false)
+  const hasMore = results.length > 10
+  const displayedResults = showAll ? results : results.slice(0, 10)
 
   return (
     <div className="rounded-lg bg-pitwall-bg border border-pitwall-border overflow-hidden">
@@ -38,7 +44,7 @@ export default function RaceResultCard({ results, eventName }: RaceResultCardPro
       </div>
 
       <div className="divide-y divide-pitwall-border/50">
-        {top10.map((entry, i) => (
+        {displayedResults.map((entry, i) => (
           <div
             key={entry.position}
             className={`flex items-center gap-3 px-3 py-1.5 text-sm ${positionBg(entry.position)} ${i % 2 === 1 ? 'bg-pitwall-surface/30' : ''}`}
@@ -78,6 +84,15 @@ export default function RaceResultCard({ results, eventName }: RaceResultCardPro
           </div>
         ))}
       </div>
+
+      {hasMore && (
+        <button
+          onClick={() => setShowAll(prev => !prev)}
+          className="w-full px-3 py-2 text-xs font-medium text-pitwall-accent hover:bg-pitwall-surface/50 transition-colors border-t border-pitwall-border/50"
+        >
+          {showAll ? 'Show top 10' : `Show full classification (${results.length} drivers)`}
+        </button>
+      )}
     </div>
   )
 }

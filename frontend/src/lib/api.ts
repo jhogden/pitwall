@@ -1,7 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
 async function fetchApi<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`)
+  const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' })
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }
@@ -92,6 +92,28 @@ export interface Result {
   status: string
 }
 
+export interface LapTelemetryPoint {
+  id: number
+  lapNumber: number
+  position: number | null
+  carNumber: string
+  driverName: string | null
+  driverNumber: number | null
+  teamName: string | null
+  teamColor: string | null
+  lapTime: string | null
+  sector1Time: string | null
+  sector2Time: string | null
+  sector3Time: string | null
+  sector4Time: string | null
+  averageSpeedKph: string | null
+  topSpeedKph: string | null
+  sessionElapsed: string | null
+  lapTimestamp: string | null
+  isValid: boolean | null
+  crossingPitFinishLane: boolean | null
+}
+
 export interface FeedItem {
   id: number
   type: string
@@ -125,9 +147,17 @@ export const api = {
     const qs = params.toString()
     return fetchApi<EventSummary[]>(`/api/calendar${qs ? `?${qs}` : ''}`)
   },
+  getSeasons: (series?: string) => {
+    const params = new URLSearchParams()
+    if (series) params.set('series', series)
+    const qs = params.toString()
+    return fetchApi<number[]>(`/api/calendar/seasons${qs ? `?${qs}` : ''}`)
+  },
   getEvent: (slug: string) => fetchApi<EventDetail>(`/api/events/${slug}`),
   getFeed: (page = 0, size = 20, series?: string) =>
     fetchApi<FeedPage>(`/api/feed?page=${page}&size=${size}${series ? `&series=${series}` : ''}`),
   getResults: (slug: string, sessionId: number) => fetchApi<Result[]>(`/api/events/${slug}/results?sessionId=${sessionId}`),
+  getTelemetry: (slug: string, sessionId: number) =>
+    fetchApi<LapTelemetryPoint[]>(`/api/events/${slug}/telemetry?sessionId=${sessionId}`),
   getDriver: (slug: string) => fetchApi<Driver>(`/api/drivers/${slug}`),
 }

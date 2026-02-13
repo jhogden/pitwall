@@ -9,9 +9,10 @@ import SeriesBadge from '@/components/SeriesBadge'
 import LiveIndicator from '@/components/LiveIndicator'
 import SessionTimeline from '@/components/SessionTimeline'
 import RaceResultCard from '@/components/RaceResultCard'
+import TelemetryLiteCard from '@/components/TelemetryLiteCard'
 import { SESSION_TYPE_LABELS, STATUS_STYLES } from '@/lib/constants'
 import { api } from '@/lib/api'
-import type { EventDetail, Result, Session } from '@/lib/api'
+import type { EventDetail, LapTelemetryPoint, Result, Session } from '@/lib/api'
 
 const EVENT_STATUS_STYLES: Record<string, string> = {
   ...STATUS_STYLES,
@@ -21,6 +22,24 @@ const EVENT_STATUS_STYLES: Record<string, string> = {
 }
 
 const SESSION_PRIORITY = ['race', 'sprint', 'qualifying']
+const LIVE_POLL_INTERVAL_MS = 5000
+
+function pickDefaultSession(eventStatus: string, sessions: Session[]): Session | null {
+  const nonPractice = sessions.filter(s => s.type !== 'practice')
+  if (nonPractice.length === 0) return null
+
+  const pickByPriority = (candidates: Session[]) =>
+    SESSION_PRIORITY
+      .map(type => candidates.find(s => s.type === type))
+      .find(Boolean) || null
+
+  if (eventStatus === 'live') {
+    return pickByPriority(nonPractice) || nonPractice[0]
+  }
+
+  const completed = nonPractice.filter(s => s.status === 'completed')
+  return pickByPriority(completed) || completed[0] || pickByPriority(nonPractice) || nonPractice[0]
+}
 
 export default function EventDetailPage() {
   const params = useParams()
@@ -29,18 +48,14 @@ export default function EventDetailPage() {
   const [results, setResults] = useState<Result[]>([])
   const [selectedSession, setSelectedSession] = useState<Session | null>(null)
   const [isLoadingResults, setIsLoadingResults] = useState(false)
+  const [telemetry, setTelemetry] = useState<LapTelemetryPoint[]>([])
+  const [isLoadingTelemetry, setIsLoadingTelemetry] = useState(false)
 
   useEffect(() => {
     api.getEvent(slug)
       .then(data => {
         setEvent(data)
-
-        const completedSessions = (data.sessions || []).filter(
-          (s: Session) => s.status === 'completed' && s.type !== 'practice'
-        )
-        const best = SESSION_PRIORITY
-          .map(type => completedSessions.find((s: Session) => s.type === type))
-          .find(Boolean)
+        const best = pickDefaultSession(data.status, data.sessions || [])
         if (best) setSelectedSession(best)
       })
       .catch(() => {})
@@ -49,6 +64,7 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (!selectedSession) {
       setResults([])
+      setTelemetry([])
       return
     }
 
@@ -57,7 +73,51 @@ export default function EventDetailPage() {
       .then(setResults)
       .catch(() => setResults([]))
       .finally(() => setIsLoadingResults(false))
+
+    setIsLoadingTelemetry(true)
+    api.getTelemetry(slug, selectedSession.id)
+      .then(setTelemetry)
+      .catch(() => setTelemetry([]))
+      .finally(() => setIsLoadingTelemetry(false))
   }, [slug, selectedSession])
+
+  useEffect(() => {
+    if (!event || event.status !== 'live') return
+
+    const pollLiveData = async () => {
+      try {
+        const latestEvent = await api.getEvent(slug)
+        setEvent(latestEvent)
+
+        if (!selectedSession) return
+
+        const latestSession = latestEvent.sessions.find(s => s.id === selectedSession.id)
+        if (
+          latestSession &&
+          (latestSession.status !== selectedSession.status ||
+            latestSession.name !== selectedSession.name ||
+            latestSession.startTime !== selectedSession.startTime ||
+            latestSession.endTime !== selectedSession.endTime)
+        ) {
+          setSelectedSession(latestSession)
+        }
+
+        const [nextResults, nextTelemetry] = await Promise.all([
+          api.getResults(slug, selectedSession.id).catch(() => null),
+          api.getTelemetry(slug, selectedSession.id).catch(() => null),
+        ])
+
+        if (nextResults) setResults(nextResults)
+        if (nextTelemetry) setTelemetry(nextTelemetry)
+      } catch {
+        // Keep current UI state during transient polling failures.
+      }
+    }
+
+    pollLiveData()
+    const intervalId = setInterval(pollLiveData, LIVE_POLL_INTERVAL_MS)
+    return () => clearInterval(intervalId)
+  }, [event?.status, selectedSession, slug])
 
   if (!event) {
     return (
@@ -75,7 +135,7 @@ export default function EventDetailPage() {
   return (
     <div>
       <Link
-        href={`/calendar/${eventYear}`}
+        href={`/calendar/${eventYear}/${event.series.slug}`}
         className="inline-flex items-center gap-1 text-sm text-pitwall-text-muted hover:text-pitwall-text mb-4 transition-colors"
       >
         <ArrowLeft size={16} />
@@ -133,11 +193,11 @@ export default function EventDetailPage() {
                       className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                         selectedSession?.id === session.id
                           ? 'bg-pitwall-accent text-white'
-                          : session.status === 'completed'
+                          : session.status === 'completed' || event.status === 'live'
                             ? 'text-pitwall-text-muted hover:text-pitwall-text'
                             : 'text-pitwall-text-muted/50 cursor-not-allowed'
                       }`}
-                      disabled={session.status !== 'completed'}
+                      disabled={session.status !== 'completed' && event.status !== 'live'}
                     >
                       {SESSION_TYPE_LABELS[session.type] || session.name}
                     </button>
@@ -168,6 +228,15 @@ export default function EventDetailPage() {
                   <p className="text-pitwall-text-muted">No results available for this session yet.</p>
                 </div>
               ) : null}
+
+              {isLoadingTelemetry ? (
+                <div className="mt-6 h-48 bg-pitwall-surface rounded-lg animate-pulse" />
+              ) : telemetry.length > 0 ? (
+                <TelemetryLiteCard
+                  telemetry={telemetry}
+                  eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
+                />
+              ) : null}
             </div>
           )}
 
@@ -192,6 +261,9 @@ export default function EventDetailPage() {
               </div>
               <p className="text-sm text-pitwall-text-muted">
                 Results will update as sessions complete
+              </p>
+              <p className="text-xs text-pitwall-text-muted mt-2">
+                Auto-refreshing every {LIVE_POLL_INTERVAL_MS / 1000}s
               </p>
             </div>
           )}
