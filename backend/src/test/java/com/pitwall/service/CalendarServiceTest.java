@@ -7,6 +7,7 @@ import com.pitwall.model.Event;
 import com.pitwall.model.Season;
 import com.pitwall.model.Series;
 import com.pitwall.repository.EventRepository;
+import com.pitwall.repository.SeasonRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -25,6 +26,9 @@ class CalendarServiceTest {
 
     @Mock
     private EventRepository eventRepository;
+
+    @Mock
+    private SeasonRepository seasonRepository;
 
     @Mock
     private EventMapper eventMapper;
@@ -174,6 +178,70 @@ class CalendarServiceTest {
         // Assert
         assertTrue(result.isEmpty());
         verifyNoInteractions(eventMapper);
+    }
+
+    @Test
+    void findAvailableYears_withSeriesSlug_returnsYearsForSeries() {
+        // Arrange
+        String seriesSlug = "f1";
+        Season season2025 = buildSeason(1L, 2025);
+        Season season2024 = buildSeason(2L, 2024);
+
+        when(seasonRepository.findBySeriesSlugOrderByYearDesc(seriesSlug))
+                .thenReturn(List.of(season2025, season2024));
+
+        // Act
+        List<Integer> result = calendarService.findAvailableYears(seriesSlug);
+
+        // Assert
+        assertEquals(List.of(2025, 2024), result);
+        verify(seasonRepository).findBySeriesSlugOrderByYearDesc(seriesSlug);
+        verify(seasonRepository, never()).findAllByOrderByYearDesc();
+    }
+
+    @Test
+    void findAvailableYears_withoutSeriesSlug_returnsAllYears() {
+        // Arrange
+        Season season2025 = buildSeason(1L, 2025);
+        Season season2024 = buildSeason(2L, 2024);
+        Season season1950 = buildSeason(3L, 1950);
+
+        when(seasonRepository.findAllByOrderByYearDesc())
+                .thenReturn(List.of(season2025, season2024, season1950));
+
+        // Act
+        List<Integer> result = calendarService.findAvailableYears(null);
+
+        // Assert
+        assertEquals(List.of(2025, 2024, 1950), result);
+        verify(seasonRepository).findAllByOrderByYearDesc();
+        verify(seasonRepository, never()).findBySeriesSlugOrderByYearDesc(any());
+    }
+
+    @Test
+    void findAvailableYears_whenNoneExist_returnsEmptyList() {
+        // Arrange
+        when(seasonRepository.findAllByOrderByYearDesc()).thenReturn(Collections.emptyList());
+
+        // Act
+        List<Integer> result = calendarService.findAvailableYears(null);
+
+        // Assert
+        assertTrue(result.isEmpty());
+    }
+
+    private Season buildSeason(Long id, int year) {
+        Series series = new Series();
+        series.setId(1L);
+        series.setName("Formula 1");
+        series.setSlug("f1");
+        series.setColorPrimary("#E10600");
+
+        Season season = new Season();
+        season.setId(id);
+        season.setSeries(series);
+        season.setYear(year);
+        return season;
     }
 
     private Event buildEvent(Long id, String slug) {

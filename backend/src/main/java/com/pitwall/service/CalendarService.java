@@ -2,7 +2,9 @@ package com.pitwall.service;
 
 import com.pitwall.dto.EventDto;
 import com.pitwall.mapper.EventMapper;
+import com.pitwall.model.Season;
 import com.pitwall.repository.EventRepository;
+import com.pitwall.repository.SeasonRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,11 +16,25 @@ import java.util.List;
 public class CalendarService {
 
     private final EventRepository eventRepository;
+    private final SeasonRepository seasonRepository;
     private final EventMapper eventMapper;
 
-    public CalendarService(EventRepository eventRepository, EventMapper eventMapper) {
+    public CalendarService(EventRepository eventRepository, SeasonRepository seasonRepository, EventMapper eventMapper) {
         this.eventRepository = eventRepository;
+        this.seasonRepository = seasonRepository;
         this.eventMapper = eventMapper;
+    }
+
+    public List<Integer> findAvailableYears(String seriesSlug) {
+        List<Season> seasons;
+        if (seriesSlug != null && !seriesSlug.isBlank()) {
+            seasons = seasonRepository.findBySeriesSlugOrderByYearDesc(seriesSlug);
+        } else {
+            seasons = seasonRepository.findAllByOrderByYearDesc();
+        }
+        return seasons.stream()
+                .map(Season::getYear)
+                .toList();
     }
 
     public List<EventDto> findUpcomingEvents() {

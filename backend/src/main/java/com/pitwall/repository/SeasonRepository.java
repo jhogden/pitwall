@@ -13,4 +13,8 @@ public interface SeasonRepository extends JpaRepository<Season, Long> {
     Optional<Season> findBySeriesIdAndYear(Long seriesId, int year);
 
     List<Season> findBySeriesSlug(String slug);
+
+    List<Season> findBySeriesSlugOrderByYearDesc(String slug);
+
+    List<Season> findAllByOrderByYearDesc();
 }

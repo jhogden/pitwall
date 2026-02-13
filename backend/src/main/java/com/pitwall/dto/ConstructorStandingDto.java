@@ -1,10 +1,7 @@
 package com.pitwall.dto;
 
-public record StandingDto(
+public record ConstructorStandingDto(
         Integer position,
-        String driverName,
-        String driverSlug,
-        Integer driverNumber,
         String teamName,
         String teamColor,
         double points,

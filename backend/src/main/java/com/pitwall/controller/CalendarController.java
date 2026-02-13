@@ -21,6 +21,11 @@ public class CalendarController {
         this.calendarService = calendarService;
     }
 
+    @GetMapping("/seasons")
+    public ResponseEntity<List<Integer>> getSeasons(@RequestParam(required = false) String series) {
+        return ResponseEntity.ok(calendarService.findAvailableYears(series));
+    }
+
     @GetMapping
     public ResponseEntity<List<EventDto>> getCalendar(
             @RequestParam(required = false) String series,
