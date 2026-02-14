@@ -14,6 +14,7 @@ interface RaceResultEntry {
 interface RaceResultCardProps {
   results: RaceResultEntry[]
   eventName: string
+  onDriverClick?: (entry: RaceResultEntry) => void
 }
 
 function positionColor(position: number): string {
@@ -30,7 +31,7 @@ function positionBg(position: number): string {
   return ''
 }
 
-export default function RaceResultCard({ results, eventName }: RaceResultCardProps) {
+export default function RaceResultCard({ results, eventName, onDriverClick }: RaceResultCardProps) {
   const [showAll, setShowAll] = useState(false)
   const hasMore = results.length > 10
   const displayedResults = showAll ? results : results.slice(0, 10)
@@ -65,9 +66,14 @@ export default function RaceResultCard({ results, eventName }: RaceResultCardPro
                 className="h-2.5 w-1 rounded-full shrink-0"
                 style={{ backgroundColor: entry.teamColor }}
               />
-              <span className="text-pitwall-text font-medium truncate">
+              <button
+                type="button"
+                onClick={() => onDriverClick?.(entry)}
+                className={`text-pitwall-text font-medium truncate text-left ${onDriverClick ? 'hover:text-pitwall-accent transition-colors' : 'cursor-default'}`}
+                disabled={!onDriverClick}
+              >
                 {entry.driverName}
-              </span>
+              </button>
             </div>
 
             <span className="font-mono text-xs text-pitwall-text-muted text-right">

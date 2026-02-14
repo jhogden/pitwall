@@ -15,6 +15,14 @@ import type { LapTelemetryPoint } from '@/lib/api'
 interface TelemetryLiteCardProps {
   telemetry: LapTelemetryPoint[]
   eventName: string
+  preferredDriver?: {
+    name: string
+    carNumber: number | null
+  } | null
+  leaderboardOrder?: Array<{
+    name: string
+    carNumber: number | null
+  }>
 }
 
 interface DriverOption {
@@ -45,20 +53,41 @@ function formatSeconds(seconds: number): string {
   return `${min}:${sec.toFixed(3).padStart(6, '0')}`
 }
 
-export default function TelemetryLiteCard({ telemetry, eventName }: TelemetryLiteCardProps) {
+export default function TelemetryLiteCard({
+  telemetry,
+  eventName,
+  preferredDriver = null,
+  leaderboardOrder = [],
+}: TelemetryLiteCardProps) {
   const driverOptions = useMemo<DriverOption[]>(() => {
+    const orderIndex = new Map<string, number>()
+    leaderboardOrder.forEach((entry, idx) => {
+      if (entry.carNumber !== null) {
+        orderIndex.set(String(entry.carNumber), idx)
+      }
+      orderIndex.set(entry.name.toLowerCase(), idx)
+    })
+
     const map = new Map<string, DriverOption>()
     for (const row of telemetry) {
       const key = `${row.carNumber}|${row.driverName || 'Unknown'}`
       if (map.has(key)) continue
+      const teamSuffix = row.teamName ? ` · ${row.teamName}` : ''
       map.set(key, {
         key,
-        label: `${row.driverName || 'Unknown'} (#${row.carNumber})`,
+        label: `${row.driverName || 'Unknown'} (#${row.carNumber})${teamSuffix}`,
         teamColor: row.teamColor || '#4D4D4D',
       })
     }
-    return Array.from(map.values())
-  }, [telemetry])
+    return Array.from(map.values()).sort((a, b) => {
+      const [aCar, aName] = a.key.split('|')
+      const [bCar, bName] = b.key.split('|')
+      const aIdx = orderIndex.get(aCar) ?? orderIndex.get(aName.toLowerCase()) ?? Number.MAX_SAFE_INTEGER
+      const bIdx = orderIndex.get(bCar) ?? orderIndex.get(bName.toLowerCase()) ?? Number.MAX_SAFE_INTEGER
+      if (aIdx !== bIdx) return aIdx - bIdx
+      return a.label.localeCompare(b.label)
+    })
+  }, [leaderboardOrder, telemetry])
 
   const [selectedKey, setSelectedKey] = useState<string>(driverOptions[0]?.key || '')
 
@@ -71,6 +100,16 @@ export default function TelemetryLiteCard({ telemetry, eventName }: TelemetryLit
       driverOptions.some(d => d.key === prev) ? prev : driverOptions[0].key
     )
   }, [driverOptions])
+
+  useEffect(() => {
+    if (!preferredDriver || !driverOptions.length) return
+    const matched = driverOptions.find(option => {
+      const [car, name] = option.key.split('|')
+      if (preferredDriver.carNumber !== null && car === String(preferredDriver.carNumber)) return true
+      return name.toLowerCase() === preferredDriver.name.toLowerCase()
+    })
+    if (matched) setSelectedKey(matched.key)
+  }, [driverOptions, preferredDriver])
 
   const selectedRows = useMemo(() => {
     if (!selectedKey) return []

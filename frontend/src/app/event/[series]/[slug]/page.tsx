@@ -112,6 +112,8 @@ export default function EventDetailPage() {
   const [isLoadingTelemetry, setIsLoadingTelemetry] = useState(false)
   const [availableClasses, setAvailableClasses] = useState<string[]>([])
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
+  const [showTelemetryModal, setShowTelemetryModal] = useState(false)
+  const [preferredTelemetryDriver, setPreferredTelemetryDriver] = useState<{ name: string; carNumber: number | null } | null>(null)
 
   const isClassBasedSeries = event?.series.slug === 'wec' || event?.series.slug === 'imsa'
 
@@ -278,6 +280,26 @@ export default function EventDetailPage() {
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <h2 className="text-lg font-semibold text-pitwall-text">Results</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const leader = results[0]
+                    setPreferredTelemetryDriver(
+                      leader
+                        ? { name: leader.driverName, carNumber: leader.driverNumber }
+                        : null
+                    )
+                    setShowTelemetryModal(true)
+                  }}
+                  disabled={telemetry.length === 0}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                    telemetry.length > 0
+                      ? 'border-pitwall-accent text-pitwall-accent hover:bg-pitwall-accent/10'
+                      : 'border-pitwall-border text-pitwall-text-muted/60 cursor-not-allowed'
+                  }`}
+                >
+                  Telemetry Lite
+                </button>
                 <div className="flex gap-1 bg-pitwall-surface rounded-lg p-0.5">
                   {resultSessions.map(session => (
                     <button
@@ -327,20 +349,18 @@ export default function EventDetailPage() {
                     gap: useClassIntervals ? (classIntervals[idx] ?? r.gap) : r.gap,
                   }))}
                   eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
+                  onDriverClick={(entry) => {
+                    setPreferredTelemetryDriver({
+                      name: entry.driverName,
+                      carNumber: entry.driverNumber,
+                    })
+                    setShowTelemetryModal(true)
+                  }}
                 />
               ) : selectedSession ? (
                 <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-8 text-center">
                   <p className="text-pitwall-text-muted">No results available for this session yet.</p>
                 </div>
-              ) : null}
-
-              {isLoadingTelemetry ? (
-                <div className="mt-6 h-48 bg-pitwall-surface rounded-lg animate-pulse" />
-              ) : telemetry.length > 0 ? (
-                <TelemetryLiteCard
-                  telemetry={telemetry}
-                  eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
-                />
               ) : null}
             </div>
           )}
@@ -374,6 +394,48 @@ export default function EventDetailPage() {
           )}
         </div>
       </div>
+
+      {showTelemetryModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm p-4 md:p-8 overflow-y-auto"
+          onClick={() => setShowTelemetryModal(false)}
+        >
+          <div
+            className="max-w-5xl mx-auto mt-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-pitwall-text-muted uppercase tracking-wide">
+                Telemetry Lite
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTelemetryModal(false)}
+                className="px-3 py-1.5 text-xs font-medium rounded border border-pitwall-border text-pitwall-text-muted hover:text-pitwall-text hover:bg-pitwall-surface transition-colors"
+              >
+                Close
+              </button>
+            </div>
+            {isLoadingTelemetry ? (
+              <div className="h-72 bg-pitwall-surface rounded-lg animate-pulse" />
+            ) : telemetry.length > 0 ? (
+              <TelemetryLiteCard
+                telemetry={telemetry}
+                eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
+                preferredDriver={preferredTelemetryDriver}
+                leaderboardOrder={results.map(r => ({
+                  name: r.driverName,
+                  carNumber: r.driverNumber,
+                }))}
+              />
+            ) : (
+              <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-8 text-center">
+                <p className="text-pitwall-text-muted">No telemetry available for this session.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
