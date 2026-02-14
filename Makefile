@@ -43,9 +43,13 @@ ingest-once:              ## Run one-shot data-services initial sync now
 	docker compose run --rm --no-deps data-services python -m ingestion.main
 
 ingest-backfill-wec:      ## Backfill WEC calendars (use YEARS=2012-2025)
+	@test -n "$(YEARS)" || (echo "YEARS is required. Example: make ingest-backfill-wec YEARS=2012-2025" && exit 1)
+	@echo "$(YEARS)" | grep -Eq '^[0-9]{4}-[0-9]{4}$$' || (echo "Invalid YEARS format. Expected START-END (e.g. 2012-2025)" && exit 1)
 	docker compose run --rm --no-deps -e WEC_HISTORICAL_SYNC=$(YEARS) data-services python -m ingestion.main
 
 ingest-backfill-imsa:     ## Backfill IMSA calendars (use YEARS=2014-2025)
+	@test -n "$(YEARS)" || (echo "YEARS is required. Example: make ingest-backfill-imsa YEARS=2014-2025" && exit 1)
+	@echo "$(YEARS)" | grep -Eq '^[0-9]{4}-[0-9]{4}$$' || (echo "Invalid YEARS format. Expected START-END (e.g. 2014-2025)" && exit 1)
 	docker compose run --rm --no-deps -e IMSA_HISTORICAL_SYNC=$(YEARS) data-services python -m ingestion.main
 
 # ── Database ──────────────────────────────────────────────
