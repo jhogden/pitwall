@@ -48,9 +48,45 @@ function StatusIndicator({ status }: { status: string }) {
 
 export default function EventStrip() {
   const [events, setEvents] = useState<EventSummary[]>([])
+  const [followedSeries, setFollowedSeries] = useState<string[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
+
+  useEffect(() => {
+    const readPreference = () => {
+      try {
+        const raw = window.localStorage.getItem('pitwall.home.followedSeries')
+        if (!raw) {
+          setFollowedSeries([])
+          return
+        }
+        const parsed = JSON.parse(raw) as unknown
+        if (!Array.isArray(parsed)) {
+          setFollowedSeries([])
+          return
+        }
+        const normalized = parsed
+          .filter((value): value is string => typeof value === 'string')
+          .filter(value => ['f1', 'wec', 'imsa'].includes(value))
+        setFollowedSeries(normalized)
+      } catch {
+        setFollowedSeries([])
+      }
+    }
+
+    readPreference()
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'pitwall.home.followedSeries') readPreference()
+    }
+    window.addEventListener('storage', handleStorage)
+    // Sync when focus returns in same tab (storage event won't fire in same tab).
+    window.addEventListener('focus', readPreference)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', readPreference)
+    }
+  }, [])
 
   useEffect(() => {
     const now = new Date()
@@ -129,9 +165,14 @@ export default function EventStrip() {
     el.scrollBy({ left: direction === 'left' ? -amount : amount, behavior: 'smooth' })
   }
 
-  const liveEvents = events.filter(event => event.status === 'live')
-  const upcomingEvents = events.filter(event => event.status === 'upcoming')
-  const completedEvents = events.filter(event => event.status === 'completed')
+  const isAllSeries = followedSeries.length === 0
+  const visibleEvents = isAllSeries
+    ? events
+    : events.filter(event => followedSeries.includes(event.seriesSlug))
+
+  const liveEvents = visibleEvents.filter(event => event.status === 'live')
+  const upcomingEvents = visibleEvents.filter(event => event.status === 'upcoming')
+  const completedEvents = visibleEvents.filter(event => event.status === 'completed')
   const fallbackEvents = liveEvents.length === 0 && upcomingEvents.length === 0 ? completedEvents.slice(0, 6) : []
 
   return (
