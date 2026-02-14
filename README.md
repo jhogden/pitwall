@@ -14,6 +14,19 @@ Motorsport calendar, results, and live event tracking.
 - Node.js (for frontend dev server)
 - Java 17+ (for backend dev server, or just use Docker)
 
+## Configuration
+
+Keep all API keys and runtime config in a root `.env` file.
+
+```bash
+cp .env.example .env
+```
+
+Fill in values in `.env` (not committed). Key entries include:
+- `YOUTUBE_API_KEY` for highlights ingestion
+- `JWT_SECRET` for backend auth config
+- `NEXT_PUBLIC_API_URL` for frontend API target
+
 ## Quick Start
 
 ```bash
@@ -54,6 +67,14 @@ make dev    # starts infra + frontend dev server
 | `make test-be` | Run backend tests (Maven/JUnit) |
 | `make test-data` | Run data-services tests (Python/unittest in Docker) |
 
+### Data Ingestion
+
+| Command | Description |
+|---------|-------------|
+| `make ingest-once` | Run a one-time data-services sync immediately |
+| `make ingest-backfill-wec YEARS=2012-2025` | Backfill WEC historical calendars |
+| `make ingest-backfill-imsa YEARS=2014-2025` | Backfill IMSA historical calendars |
+
 ### Database
 
 | Command | Description |
@@ -83,3 +104,18 @@ make dev    # starts infra + frontend dev server
 4. Edit code, browser auto-refreshes
 
 Use `make build` only when dependencies change or before deploying. For day-to-day dev, `make fe` / `make be` give you instant hot reload.
+
+## YouTube Highlights Feed
+
+Set `YOUTUBE_API_KEY` in `.env`, then start data-services:
+
+```bash
+docker compose up -d data-services
+docker compose exec -T data-services python -c "from ingestion.youtube_highlights_ingestion import YoutubeHighlightsIngestion; print(YoutubeHighlightsIngestion().sync_recent_highlights(days=7, max_per_series=5))"
+```
+
+Query highlights from backend:
+
+- All: `GET /api/feed/highlights`
+- Per series: `GET /api/feed/highlights?series=wec`
+- Per event: `GET /api/feed/highlights?event=2025-24-hours-of-le-mans`
