@@ -24,6 +24,7 @@ Use root `Makefile` targets:
 - Backend uses JUnit 5, Spring test support, and Mockito.
 - Data services use `unittest` with mocks/patches for external APIs.
 - Add/update tests with each change, including edge and failure paths.
+- Backend and data-services code changes are expected to include corresponding tests in the same PR (or a clear justification if no test is possible).
 - Run `make test` before opening a PR.
 
 ## Commit & Pull Request Guidelines
