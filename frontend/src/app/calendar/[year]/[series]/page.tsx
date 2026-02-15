@@ -24,6 +24,7 @@ import type { EventSummary } from '@/lib/api'
 
 const currentYear = new Date().getFullYear()
 const QUICK_YEARS = [currentYear + 1, currentYear, currentYear - 1]
+const VALID_SERIES_PATHS = new Set(['all', 'f1', 'wec', 'imsa'])
 
 function normalizeSeriesFromPath(raw: string | undefined): string | null {
   if (!raw || raw === 'all') return null
@@ -37,8 +38,17 @@ function seriesPathValue(series: string | null): string {
 export default function CalendarPage() {
   const params = useParams()
   const router = useRouter()
-  const selectedYear = Number(params.year)
-  const selectedSeries = normalizeSeriesFromPath(params.series as string | undefined)
+  const rawYearParam = Array.isArray(params.year) ? params.year[0] : params.year
+  const rawSeriesParam = Array.isArray(params.series) ? params.series[0] : params.series
+  const parsedYear = Number.parseInt(rawYearParam ?? '', 10)
+  const selectedYear =
+    Number.isFinite(parsedYear) && parsedYear >= 1950 && parsedYear <= currentYear + 2
+      ? parsedYear
+      : currentYear
+  const normalizedSeriesPath = VALID_SERIES_PATHS.has((rawSeriesParam ?? '').toLowerCase())
+    ? (rawSeriesParam ?? '').toLowerCase()
+    : 'all'
+  const selectedSeries = normalizeSeriesFromPath(normalizedSeriesPath)
 
   const [viewMode, setViewMode] = useState<'month' | 'list'>('list')
   const [currentMonth, setCurrentMonth] = useState(new Date(selectedYear, 0, 1))
@@ -64,6 +74,12 @@ export default function CalendarPage() {
   useEffect(() => {
     setCurrentMonth(new Date(selectedYear, 0, 1))
   }, [selectedYear])
+
+  useEffect(() => {
+    if (rawYearParam !== String(selectedYear) || rawSeriesParam?.toLowerCase() !== normalizedSeriesPath) {
+      router.replace(`/calendar/${selectedYear}/${normalizedSeriesPath}`)
+    }
+  }, [rawSeriesParam, rawYearParam, normalizedSeriesPath, router, selectedYear])
 
   const yearsByDecade = useMemo(() => {
     const nonQuickYears = availableYears.filter(y => !QUICK_YEARS.includes(y))
