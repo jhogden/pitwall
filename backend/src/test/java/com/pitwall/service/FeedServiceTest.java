@@ -83,6 +83,63 @@ class FeedServiceTest {
         verify(feedItemRepository).findBySeriesSlugOrderByPublishedAtDesc(seriesSlug, pageable);
     }
 
+    @Test
+    void findHighlights_prefersEventFilterWhenProvided() {
+        Pageable pageable = PageRequest.of(0, 10);
+        String eventSlug = "2025-24-hours-of-le-mans";
+        FeedItem item = buildFeedItem(10L, "Le Mans Highlights");
+        Page<FeedItem> page = new PageImpl<>(List.of(item), pageable, 1);
+        FeedItemDto dto = buildFeedItemDto(10L, "Le Mans Highlights");
+
+        when(feedItemRepository.findByTypeAndEventSlugOrderByPublishedAtDesc("highlight", eventSlug, pageable))
+                .thenReturn(page);
+        when(feedItemMapper.toDto(item)).thenReturn(dto);
+
+        Page<FeedItemDto> result = feedService.findHighlights("wec", eventSlug, pageable);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals("Le Mans Highlights", result.getContent().get(0).title());
+        verify(feedItemRepository).findByTypeAndEventSlugOrderByPublishedAtDesc("highlight", eventSlug, pageable);
+        verify(feedItemRepository, never()).findByTypeAndSeriesSlugOrderByPublishedAtDesc(any(), any(), any());
+    }
+
+    @Test
+    void findHighlights_usesSeriesFilterWhenEventMissing() {
+        Pageable pageable = PageRequest.of(0, 10);
+        String seriesSlug = "imsa";
+        FeedItem item = buildFeedItem(11L, "IMSA Daytona Highlights");
+        Page<FeedItem> page = new PageImpl<>(List.of(item), pageable, 1);
+        FeedItemDto dto = buildFeedItemDto(11L, "IMSA Daytona Highlights");
+
+        when(feedItemRepository.findByTypeAndSeriesSlugOrderByPublishedAtDesc("highlight", seriesSlug, pageable))
+                .thenReturn(page);
+        when(feedItemMapper.toDto(item)).thenReturn(dto);
+
+        Page<FeedItemDto> result = feedService.findHighlights(seriesSlug, null, pageable);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals("IMSA Daytona Highlights", result.getContent().get(0).title());
+        verify(feedItemRepository).findByTypeAndSeriesSlugOrderByPublishedAtDesc("highlight", seriesSlug, pageable);
+        verify(feedItemRepository, never()).findByTypeAndEventSlugOrderByPublishedAtDesc(any(), any(), any());
+    }
+
+    @Test
+    void findHighlights_fallsBackToAllHighlightsWhenNoFilters() {
+        Pageable pageable = PageRequest.of(0, 10);
+        FeedItem item = buildFeedItem(12L, "Highlights Roundup");
+        Page<FeedItem> page = new PageImpl<>(List.of(item), pageable, 1);
+        FeedItemDto dto = buildFeedItemDto(12L, "Highlights Roundup");
+
+        when(feedItemRepository.findByTypeOrderByPublishedAtDesc("highlight", pageable)).thenReturn(page);
+        when(feedItemMapper.toDto(item)).thenReturn(dto);
+
+        Page<FeedItemDto> result = feedService.findHighlights(null, "   ", pageable);
+
+        assertEquals(1, result.getTotalElements());
+        assertEquals("Highlights Roundup", result.getContent().get(0).title());
+        verify(feedItemRepository).findByTypeOrderByPublishedAtDesc("highlight", pageable);
+    }
+
     private FeedItem buildFeedItem(Long id, String title) {
         Series series = new Series();
         series.setId(1L);

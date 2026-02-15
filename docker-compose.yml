@@ -5,9 +5,9 @@ services:
     image: postgres:16-alpine
     container_name: pitwall-postgres
     environment:
-      POSTGRES_DB: pitwall
-      POSTGRES_USER: pitwall
-      POSTGRES_PASSWORD: pitwall_dev
+      POSTGRES_DB: ${POSTGRES_DB:-pitwall}
+      POSTGRES_USER: ${POSTGRES_USER:-pitwall}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pitwall_dev}
     ports:
       - "5432:5432"
     volumes:
@@ -37,11 +37,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pitwall
-      SPRING_DATASOURCE_USERNAME: pitwall
-      SPRING_DATASOURCE_PASSWORD: pitwall_dev
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/pitwall}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-pitwall}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-pitwall_dev}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-redis}
+      SPRING_DATA_REDIS_PORT: ${SPRING_DATA_REDIS_PORT:-6379}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-change-in-production-must-be-at-least-256-bits-long}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,7 +58,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     depends_on:
       - backend
 
@@ -66,9 +68,10 @@ services:
       dockerfile: Dockerfile
     container_name: pitwall-data-services
     environment:
-      DATABASE_URL: postgresql://pitwall:pitwall_dev@postgres:5432/pitwall
-      REDIS_URL: redis://redis:6379
-      BACKEND_API_URL: http://backend:8080
+      DATABASE_URL: ${DATABASE_URL:-postgresql://pitwall:pitwall_dev@postgres:5432/pitwall}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://backend:8080}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

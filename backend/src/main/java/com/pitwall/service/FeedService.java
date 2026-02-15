@@ -29,4 +29,17 @@ public class FeedService {
         return feedItemRepository.findBySeriesSlugOrderByPublishedAtDesc(seriesSlug, pageable)
                 .map(feedItemMapper::toDto);
     }
+
+    public Page<FeedItemDto> findHighlights(String seriesSlug, String eventSlug, Pageable pageable) {
+        if (eventSlug != null && !eventSlug.isBlank()) {
+            return feedItemRepository.findByTypeAndEventSlugOrderByPublishedAtDesc("highlight", eventSlug, pageable)
+                    .map(feedItemMapper::toDto);
+        }
+        if (seriesSlug != null && !seriesSlug.isBlank()) {
+            return feedItemRepository.findByTypeAndSeriesSlugOrderByPublishedAtDesc("highlight", seriesSlug, pageable)
+                    .map(feedItemMapper::toDto);
+        }
+        return feedItemRepository.findByTypeOrderByPublishedAtDesc("highlight", pageable)
+                .map(feedItemMapper::toDto);
+    }
 }

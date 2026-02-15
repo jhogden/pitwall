@@ -14,4 +14,8 @@ public interface FeedItemRepository extends JpaRepository<FeedItem, Long> {
     Page<FeedItem> findAllByOrderByPublishedAtDesc(Pageable pageable);
 
     Page<FeedItem> findByTypeOrderByPublishedAtDesc(String type, Pageable pageable);
+
+    Page<FeedItem> findByTypeAndSeriesSlugOrderByPublishedAtDesc(String type, String slug, Pageable pageable);
+
+    Page<FeedItem> findByTypeAndEventSlugOrderByPublishedAtDesc(String type, String eventSlug, Pageable pageable);
 }

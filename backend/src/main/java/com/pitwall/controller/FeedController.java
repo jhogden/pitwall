@@ -40,4 +40,14 @@ public class FeedController {
         Pageable pageable = PageRequest.of(page, size);
         return ResponseEntity.ok(feedService.findAll(pageable));
     }
+
+    @GetMapping("/highlights")
+    public ResponseEntity<Page<FeedItemDto>> getHighlights(
+            @RequestParam(required = false) String series,
+            @RequestParam(required = false, name = "event") String eventSlug,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return ResponseEntity.ok(feedService.findHighlights(series, eventSlug, pageable));
+    }
 }
