@@ -10,10 +10,12 @@ import LiveIndicator from '@/components/LiveIndicator'
 import SessionTimeline from '@/components/SessionTimeline'
 import RaceResultCard from '@/components/RaceResultCard'
 import TelemetryLiteCard from '@/components/TelemetryLiteCard'
+import TireStrategyCard from '@/components/TireStrategyCard'
+import RaceReplayCard from '@/components/RaceReplayCard'
 import { SESSION_TYPE_LABELS, STATUS_STYLES } from '@/lib/constants'
 import { resolveSeriesColor } from '@/lib/constants'
 import { api } from '@/lib/api'
-import type { EventDetail, LapTelemetryPoint, Result, Session } from '@/lib/api'
+import type { EventDetail, LapTelemetryPoint, Result, Session, TireStint } from '@/lib/api'
 
 const EVENT_STATUS_STYLES: Record<string, string> = {
   ...STATUS_STYLES,
@@ -24,6 +26,54 @@ const EVENT_STATUS_STYLES: Record<string, string> = {
 
 const SESSION_PRIORITY = ['race', 'sprint', 'qualifying']
 const LIVE_POLL_INTERVAL_MS = 5000
+
+type TrackPoint = { x: number; y: number }
+
+function hashString(input: string): number {
+  let h = 2166136261
+  for (let i = 0; i < input.length; i += 1) {
+    h ^= input.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
+function mulberry32(seed: number): () => number {
+  return () => {
+    let t = (seed += 0x6d2b79f5)
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function generateTrackPoints(seedText: string, count = 240): TrackPoint[] {
+  const rand = mulberry32(hashString(seedText || 'pitwall'))
+  const a1 = 2 + rand() * 1.8
+  const a2 = 4 + rand() * 2.2
+  const p1 = rand() * Math.PI * 2
+  const p2 = rand() * Math.PI * 2
+  const p3 = rand() * Math.PI * 2
+  const baseR = 145 + rand() * 28
+  const squash = 0.5 + rand() * 0.2
+
+  const points: TrackPoint[] = []
+  for (let i = 0; i <= count; i += 1) {
+    const t = (i / count) * Math.PI * 2
+    const r = baseR + 28 * Math.sin(a1 * t + p1) + 16 * Math.sin(a2 * t + p2)
+    const wobble = 16 * Math.sin(3 * t + p3)
+    points.push({
+      x: 220 + r * Math.cos(t) + wobble,
+      y: 135 + r * squash * Math.sin(t) - wobble * 0.2,
+    })
+  }
+  return points
+}
+
+function pathFromPoints(points: TrackPoint[]): string {
+  if (!points.length) return ''
+  return `M ${points.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`
+}
 
 function parseTimingToSeconds(raw: string | null): number | null {
   if (!raw) return null
@@ -101,6 +151,13 @@ function pickDefaultSession(eventStatus: string, sessions: Session[]): Session |
   return pickByPriority(completed) || completed[0] || pickByPriority(nonPractice) || nonPractice[0]
 }
 
+function driverInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'DR'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase()
+}
+
 export default function EventDetailPage() {
   const params = useParams()
   const slug = params.slug as string
@@ -110,6 +167,7 @@ export default function EventDetailPage() {
   const [isLoadingResults, setIsLoadingResults] = useState(false)
   const [telemetry, setTelemetry] = useState<LapTelemetryPoint[]>([])
   const [isLoadingTelemetry, setIsLoadingTelemetry] = useState(false)
+  const [tireStints, setTireStints] = useState<TireStint[]>([])
   const [availableClasses, setAvailableClasses] = useState<string[]>([])
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
   const [showTelemetryModal, setShowTelemetryModal] = useState(false)
@@ -131,6 +189,7 @@ export default function EventDetailPage() {
     if (!selectedSession) {
       setResults([])
       setTelemetry([])
+      setTireStints([])
       setAvailableClasses([])
       setSelectedClass(null)
       return
@@ -155,6 +214,7 @@ export default function EventDetailPage() {
     if (!selectedSession) {
       setResults([])
       setTelemetry([])
+      setTireStints([])
       return
     }
 
@@ -165,9 +225,14 @@ export default function EventDetailPage() {
       .finally(() => setIsLoadingResults(false))
 
     setIsLoadingTelemetry(true)
-    api.getTelemetry(slug, selectedSession.id)
-      .then(setTelemetry)
-      .catch(() => setTelemetry([]))
+    Promise.allSettled([
+      api.getTelemetry(slug, selectedSession.id),
+      api.getTireStints(slug, selectedSession.id),
+    ])
+      .then(([telemetryResult, stintsResult]) => {
+        setTelemetry(telemetryResult.status === 'fulfilled' ? telemetryResult.value : [])
+        setTireStints(stintsResult.status === 'fulfilled' ? stintsResult.value : [])
+      })
       .finally(() => setIsLoadingTelemetry(false))
   }, [selectedClass, selectedSession, slug])
 
@@ -192,13 +257,15 @@ export default function EventDetailPage() {
           setSelectedSession(latestSession)
         }
 
-        const [nextResults, nextTelemetry] = await Promise.all([
+        const [nextResults, nextTelemetry, nextStints] = await Promise.all([
           api.getResults(slug, selectedSession.id, selectedClass || undefined).catch(() => null),
           api.getTelemetry(slug, selectedSession.id).catch(() => null),
+          api.getTireStints(slug, selectedSession.id).catch(() => null),
         ])
 
         if (nextResults) setResults(nextResults)
         if (nextTelemetry) setTelemetry(nextTelemetry)
+        if (nextStints) setTireStints(nextStints)
       } catch {
         // Keep current UI state during transient polling failures.
       }
@@ -222,10 +289,13 @@ export default function EventDetailPage() {
   const resultSessions = event.sessions.filter(s => s.type !== 'practice')
   const raceSession = event.sessions.find(s => s.type === 'race')
   const seriesColor = resolveSeriesColor(event.series.slug, event.series.colorPrimary)
+  const trackSeed = `${event.series.slug}-${event.slug}-${event.circuit.name}`
+  const trackPreviewPath = pathFromPoints(generateTrackPoints(trackSeed))
   const useClassIntervals =
     (event.series.slug === 'wec' || event.series.slug === 'imsa') &&
     Boolean(selectedClass)
   const classIntervals = useClassIntervals ? computeClassIntervals(results) : []
+  const podium = results.slice(0, 3)
 
   return (
     <div>
@@ -238,15 +308,25 @@ export default function EventDetailPage() {
       </Link>
 
       <div
-        className="rounded-xl p-6 mb-6 border"
+        className="rounded-xl p-6 mb-6 border relative overflow-hidden"
         style={{
           borderColor: `${seriesColor}30`,
           background: `linear-gradient(135deg, ${seriesColor}08, transparent)`,
         }}
       >
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+        {event.circuit.trackMapUrl && (
+          <div className="pointer-events-none absolute -right-8 -top-6 hidden md:block opacity-20">
+            <img
+              src={event.circuit.trackMapUrl}
+              alt=""
+              className="h-44 w-80 object-contain"
+            />
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-start justify-between gap-6 mb-4">
+          <div className="max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
               <SeriesBadge name={event.series.name} color={seriesColor} />
               <span className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${EVENT_STATUS_STYLES[event.status] || ''}`}>
                 {event.status === 'live' && <LiveIndicator />}
@@ -259,7 +339,7 @@ export default function EventDetailPage() {
               <span>{event.circuit.name} — {event.circuit.city}, {event.circuit.country}</span>
             </div>
           </div>
-          <div className="text-right">
+          <div className="text-left sm:text-right">
             <p className="text-lg font-mono text-pitwall-text">
               {format(parseISO(event.startDate), 'MMM d')}
               {event.startDate !== event.endDate && ` – ${format(parseISO(event.endDate), 'MMM d')}`}
@@ -267,18 +347,130 @@ export default function EventDetailPage() {
             <p className="text-sm text-pitwall-text-muted">{format(parseISO(event.startDate), 'yyyy')}</p>
           </div>
         </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 relative">
+          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Sessions</p>
+            <p className="text-sm font-semibold text-pitwall-text">{event.sessions.length}</p>
+          </div>
+          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Circuit</p>
+            <p className="text-sm font-semibold text-pitwall-text truncate">{event.circuit.name}</p>
+          </div>
+          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Timezone</p>
+            <p className="text-sm font-semibold text-pitwall-text truncate">{event.circuit.timezone}</p>
+          </div>
+          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Status</p>
+            <p className="text-sm font-semibold text-pitwall-text capitalize">{event.status}</p>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          <h2 className="text-lg font-semibold text-pitwall-text mb-4">Schedule</h2>
-          <SessionTimeline sessions={event.sessions} />
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        <div className="xl:col-span-4 2xl:col-span-3 space-y-5">
+          <div className="rounded-xl border border-pitwall-border bg-pitwall-surface p-4">
+            <h2 className="text-lg font-semibold text-pitwall-text mb-3">Track Layout</h2>
+            <div className="rounded-lg border border-pitwall-border bg-pitwall-bg p-3 h-44 flex items-center justify-center overflow-hidden">
+              {event.circuit.trackMapUrl ? (
+                <img
+                  src={event.circuit.trackMapUrl}
+                  alt={`${event.circuit.name} track layout`}
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <svg viewBox="0 0 440 270" className="w-full h-full">
+                  <path
+                    d={trackPreviewPath}
+                    fill="none"
+                    stroke="rgba(148,163,184,0.32)"
+                    strokeWidth="10"
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              )}
+            </div>
+            {!event.circuit.trackMapUrl && (
+              <p className="mt-2 text-xs text-pitwall-text-muted">
+                Official track image unavailable for this circuit yet.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-pitwall-border bg-pitwall-surface p-4">
+            <h2 className="text-lg font-semibold text-pitwall-text mb-3">Schedule</h2>
+            <SessionTimeline sessions={event.sessions} />
+          </div>
+
+          {podium.length > 0 && (
+            <div className="rounded-xl border border-pitwall-border bg-pitwall-surface p-4">
+              <h2 className="text-lg font-semibold text-pitwall-text mb-3">Podium Snapshot</h2>
+              <div className="grid grid-cols-1 gap-2">
+                {podium.map((entry, idx) => (
+                  <div
+                    key={`${entry.driverName}-${entry.position}`}
+                    className="rounded-lg border border-pitwall-border bg-pitwall-bg p-3"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-pitwall-text-muted">P{entry.position}</span>
+                      <span className="text-xs text-pitwall-text-muted">{idx === 0 ? 'Winner' : idx === 1 ? '+1' : '+2'}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold"
+                        style={{
+                          backgroundColor: `${entry.teamColor || seriesColor}33`,
+                          color: entry.teamColor || seriesColor,
+                        }}
+                        title={entry.driverName}
+                      >
+                        {driverInitials(entry.driverName)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-pitwall-text">{entry.driverName}</p>
+                        <p className="truncate text-xs text-pitwall-text-muted">{entry.teamName}</p>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs text-pitwall-text-muted">
+                      {entry.gap || entry.time || (entry.position === 1 ? 'Leader' : '')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {event.status === 'upcoming' && (
+            <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-5 text-center">
+              <p className="text-pitwall-text-muted">Results will be available after sessions complete</p>
+              {raceSession && (
+                <p className="text-sm text-pitwall-text-muted mt-2">
+                  Race starts {format(parseISO(raceSession.startTime), 'PPpp')}
+                </p>
+              )}
+            </div>
+          )}
+
+          {event.status === 'live' && (
+            <div className="bg-green-400/5 rounded-lg border border-green-400/20 p-5 text-center">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <LiveIndicator size="md" />
+                <p className="text-green-400 font-semibold">Event is LIVE</p>
+              </div>
+              <p className="text-sm text-pitwall-text-muted">Results update during the session</p>
+              <p className="text-xs text-pitwall-text-muted mt-1">
+                Auto-refresh every {LIVE_POLL_INTERVAL_MS / 1000}s
+              </p>
+            </div>
+          )}
         </div>
 
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-8 2xl:col-span-9 space-y-5">
           {resultSessions.length > 0 && (
-            <div>
-              <div className="flex items-center gap-3 mb-4">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <h2 className="text-lg font-semibold text-pitwall-text">Results</h2>
                 <button
                   type="button"
@@ -362,34 +554,72 @@ export default function EventDetailPage() {
                   <p className="text-pitwall-text-muted">No results available for this session yet.</p>
                 </div>
               ) : null}
-            </div>
-          )}
 
-          {event.status === 'upcoming' && (
-            <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-8 text-center">
-              <p className="text-pitwall-text-muted text-lg">
-                Results will be available after sessions complete
-              </p>
-              {raceSession && (
-                <p className="text-sm text-pitwall-text-muted mt-2">
-                  Race starts {format(parseISO(raceSession.startTime), 'PPpp')}
-                </p>
-              )}
-            </div>
-          )}
+              <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
+                {isLoadingTelemetry ? (
+                  <div className="rounded-lg bg-pitwall-bg border border-pitwall-border overflow-hidden">
+                    <div className="px-3 py-2 border-b border-pitwall-border">
+                      <h4 className="text-xs font-semibold text-pitwall-text-muted uppercase tracking-wide">
+                        Race Replay (Beta)
+                      </h4>
+                    </div>
+                    <div className="p-4">
+                      <div className="h-24 rounded-md bg-pitwall-surface animate-pulse" />
+                    </div>
+                  </div>
+                ) : telemetry.length > 0 ? (
+                  <RaceReplayCard
+                    telemetry={telemetry}
+                    trackMapUrl={event.circuit.trackMapUrl}
+                    trackSeed={`${event.series.slug}-${event.slug}-${event.circuit.name}`}
+                  />
+                ) : (
+                  <div className="rounded-lg bg-pitwall-bg border border-pitwall-border overflow-hidden">
+                    <div className="px-3 py-2 border-b border-pitwall-border">
+                      <h4 className="text-xs font-semibold text-pitwall-text-muted uppercase tracking-wide">
+                        Race Replay (Beta)
+                      </h4>
+                    </div>
+                    <div className="p-4 text-sm text-pitwall-text-muted">
+                      Replay requires lap telemetry for this session. Try a session/event with telemetry data.
+                    </div>
+                  </div>
+                )}
 
-          {event.status === 'live' && (
-            <div className="bg-green-400/5 rounded-lg border border-green-400/20 p-8 text-center">
-              <div className="flex items-center justify-center gap-2 mb-2">
-                <LiveIndicator size="md" />
-                <p className="text-green-400 text-lg font-semibold">Event is LIVE</p>
+                {isLoadingTelemetry ? (
+                  <div className="rounded-lg bg-pitwall-bg border border-pitwall-border overflow-hidden">
+                    <div className="px-3 py-2 border-b border-pitwall-border">
+                      <h4 className="text-xs font-semibold text-pitwall-text-muted uppercase tracking-wide">
+                        Tire / Stint Strategy (Lite)
+                      </h4>
+                    </div>
+                    <div className="p-4">
+                      <div className="h-20 rounded-md bg-pitwall-surface animate-pulse" />
+                    </div>
+                  </div>
+                ) : (telemetry.length > 0 || tireStints.length > 0) ? (
+                  <TireStrategyCard
+                    telemetry={telemetry}
+                    tireStints={tireStints}
+                    leaderboardOrder={results.map(r => ({
+                      name: r.driverName,
+                      carNumber: r.driverNumber,
+                      teamColor: r.teamColor,
+                    }))}
+                  />
+                ) : (
+                  <div className="rounded-lg bg-pitwall-bg border border-pitwall-border overflow-hidden">
+                    <div className="px-3 py-2 border-b border-pitwall-border">
+                      <h4 className="text-xs font-semibold text-pitwall-text-muted uppercase tracking-wide">
+                        Tire / Stint Strategy (Lite)
+                      </h4>
+                    </div>
+                    <div className="p-4 text-sm text-pitwall-text-muted">
+                      No telemetry-derived stint data is available for this session yet.
+                    </div>
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-pitwall-text-muted">
-                Results will update as sessions complete
-              </p>
-              <p className="text-xs text-pitwall-text-muted mt-2">
-                Auto-refreshing every {LIVE_POLL_INTERVAL_MS / 1000}s
-              </p>
             </div>
           )}
         </div>

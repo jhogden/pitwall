@@ -115,6 +115,21 @@ export interface LapTelemetryPoint {
   crossingPitFinishLane: boolean | null
 }
 
+export interface TireStint {
+  id: number
+  stintNumber: number
+  compound: string | null
+  lapStart: number
+  lapEnd: number
+  tyreAgeAtStart: number | null
+  isNewTyre: boolean | null
+  source: string | null
+  driverName: string | null
+  driverNumber: number | null
+  teamName: string | null
+  teamColor: string | null
+}
+
 export interface DriverStanding {
   position: number
   driverName: string
@@ -178,6 +193,15 @@ export const api = {
   getEvent: (slug: string) => fetchApi<EventDetail>(`/api/events/${slug}`),
   getFeed: (page = 0, size = 20, series?: string) =>
     fetchApi<FeedPage>(`/api/feed?page=${page}&size=${size}${series ? `&series=${series}` : ''}`),
+  getHighlights: (page = 0, size = 20, series?: string, eventSlug?: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      size: String(size),
+    })
+    if (series) params.set('series', series)
+    if (eventSlug) params.set('event', eventSlug)
+    return fetchApi<FeedPage>(`/api/feed/highlights?${params.toString()}`)
+  },
   getResults: (slug: string, sessionId: number, className?: string) => {
     const params = new URLSearchParams({ sessionId: String(sessionId) })
     if (className) params.set('className', className)
@@ -187,6 +211,8 @@ export const api = {
     fetchApi<string[]>(`/api/events/${slug}/result-classes?sessionId=${sessionId}`),
   getTelemetry: (slug: string, sessionId: number) =>
     fetchApi<LapTelemetryPoint[]>(`/api/events/${slug}/telemetry?sessionId=${sessionId}`),
+  getTireStints: (slug: string, sessionId: number) =>
+    fetchApi<TireStint[]>(`/api/events/${slug}/tire-stints?sessionId=${sessionId}`),
   getDriverStandings: (slug: string, year?: number, className?: string) => {
     const params = new URLSearchParams()
     if (year) params.set('year', String(year))
