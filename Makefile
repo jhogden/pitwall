@@ -1,4 +1,4 @@
-.PHONY: dev up down build build-fe build-be fe be db logs clean test test-be test-data ingest-once ingest-backfill-wec ingest-backfill-imsa
+.PHONY: dev up down build build-fe build-be fe be db logs clean test test-be test-data ingest-once ingest-backfill-wec ingest-backfill-imsa ingest-backfill-f1-tires ingest-backfill-f1-track-maps
 
 # ── Full stack ────────────────────────────────────────────
 dev: up fe                ## Start infra + frontend dev server
@@ -40,17 +40,27 @@ test-data:                ## Run data-services tests
 
 # ── Data Ingestion ───────────────────────────────────────
 ingest-once:              ## Run one-shot data-services initial sync now
-	docker compose run --rm --no-deps data-services python -m ingestion.main
+	docker compose run --rm --no-deps -e RUN_ONCE=1 data-services python -m ingestion.main
 
 ingest-backfill-wec:      ## Backfill WEC calendars (use YEARS=2012-2025)
 	@test -n "$(YEARS)" || (echo "YEARS is required. Example: make ingest-backfill-wec YEARS=2012-2025" && exit 1)
 	@echo "$(YEARS)" | grep -Eq '^[0-9]{4}-[0-9]{4}$$' || (echo "Invalid YEARS format. Expected START-END (e.g. 2012-2025)" && exit 1)
-	docker compose run --rm --no-deps -e WEC_HISTORICAL_SYNC=$(YEARS) data-services python -m ingestion.main
+	docker compose run --rm --no-deps -e RUN_ONCE=1 -e SKIP_INITIAL_SYNC=1 -e WEC_HISTORICAL_SYNC=$(YEARS) data-services python -m ingestion.main
 
 ingest-backfill-imsa:     ## Backfill IMSA calendars (use YEARS=2014-2025)
 	@test -n "$(YEARS)" || (echo "YEARS is required. Example: make ingest-backfill-imsa YEARS=2014-2025" && exit 1)
 	@echo "$(YEARS)" | grep -Eq '^[0-9]{4}-[0-9]{4}$$' || (echo "Invalid YEARS format. Expected START-END (e.g. 2014-2025)" && exit 1)
-	docker compose run --rm --no-deps -e IMSA_HISTORICAL_SYNC=$(YEARS) data-services python -m ingestion.main
+	docker compose run --rm --no-deps -e RUN_ONCE=1 -e SKIP_INITIAL_SYNC=1 -e IMSA_HISTORICAL_SYNC=$(YEARS) data-services python -m ingestion.main
+
+ingest-backfill-f1-tires: ## Backfill F1 tire stints (FastF1, use YEARS=2018-2026)
+	@test -n "$(YEARS)" || (echo "YEARS is required. Example: make ingest-backfill-f1-tires YEARS=2018-2026" && exit 1)
+	@echo "$(YEARS)" | grep -Eq '^[0-9]{4}-[0-9]{4}$$' || (echo "Invalid YEARS format. Expected START-END (e.g. 2018-2026)" && exit 1)
+	docker compose run --rm --no-deps -e RUN_ONCE=1 -e SKIP_INITIAL_SYNC=1 -e F1_TIRE_STINT_SYNC=$(YEARS) data-services python -m ingestion.main
+
+ingest-backfill-f1-track-maps: ## Backfill F1 track map URLs from OpenF1 (use YEARS=2018-2026)
+	@test -n "$(YEARS)" || (echo "YEARS is required. Example: make ingest-backfill-f1-track-maps YEARS=2018-2026" && exit 1)
+	@echo "$(YEARS)" | grep -Eq '^[0-9]{4}-[0-9]{4}$$' || (echo "Invalid YEARS format. Expected START-END (e.g. 2018-2026)" && exit 1)
+	docker compose run --rm --no-deps -e RUN_ONCE=1 -e SKIP_INITIAL_SYNC=1 -e F1_TRACK_MAP_SYNC=$(YEARS) data-services python -m ingestion.main
 
 # ── Database ──────────────────────────────────────────────
 db:                       ## Start just postgres

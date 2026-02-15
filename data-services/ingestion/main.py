@@ -10,6 +10,8 @@ from ingestion.imsa_ingestion import ImsaIngestion
 from ingestion.wec_ingestion import WecIngestion
 from ingestion.standings_ingestion import StandingsIngestion
 from ingestion.feed_generator import FeedGenerator
+from ingestion.youtube_highlights_ingestion import YoutubeHighlightsIngestion
+from ingestion.f1_track_map_ingestion import F1TrackMapIngestion
 from ingestion.config import db_session
 from ingestion.models import Event, Session, Result, Season, Series
 
@@ -207,6 +209,7 @@ def run_initial_sync() -> None:
     imsa = ImsaIngestion()
     wec = WecIngestion()
     feed = FeedGenerator()
+    highlights = YoutubeHighlightsIngestion()
     standings = StandingsIngestion()
 
     prev = previous_year()
@@ -242,6 +245,7 @@ def run_initial_sync() -> None:
     standings.sync_all_for_year(curr)
 
     feed.generate_upcoming_previews()
+    highlights.sync_recent_highlights(days=7, max_per_series=5)
     logger.info("Initial data sync complete.")
 
 
@@ -275,6 +279,11 @@ def scheduled_results_check() -> None:
 def scheduled_generate_previews() -> None:
     logger.info("Running scheduled preview generation...")
     FeedGenerator().generate_upcoming_previews()
+
+
+def scheduled_youtube_highlights() -> None:
+    logger.info("Running scheduled YouTube highlights sync...")
+    YoutubeHighlightsIngestion().sync_recent_highlights(days=7, max_per_series=5)
 
 
 def scheduled_calendar_refresh() -> None:
@@ -318,11 +327,43 @@ def main() -> None:
         except ValueError:
             logger.error("Invalid IMSA_HISTORICAL_SYNC format. Expected 'START-END' (e.g. '2014-2025').")
 
-    run_initial_sync()
+    f1_tire_stint_backfill = os.getenv("F1_TIRE_STINT_SYNC")
+    if f1_tire_stint_backfill:
+        try:
+            start_str, end_str = f1_tire_stint_backfill.split("-", 1)
+            f1 = F1Ingestion()
+            for year in range(int(start_str), int(end_str) + 1):
+                f1.sync_tire_stints_for_year(year)
+        except ValueError:
+            logger.error("Invalid F1_TIRE_STINT_SYNC format. Expected 'START-END' (e.g. '2018-2026').")
+
+    f1_track_map_sync = os.getenv("F1_TRACK_MAP_SYNC")
+    if f1_track_map_sync:
+        try:
+            track_maps = F1TrackMapIngestion()
+            if "-" in f1_track_map_sync:
+                start_str, end_str = f1_track_map_sync.split("-", 1)
+                track_maps.sync_track_maps(start_year=int(start_str), end_year=int(end_str))
+            else:
+                track_maps.sync_track_maps()
+        except ValueError:
+            logger.error("Invalid F1_TRACK_MAP_SYNC format. Expected 'START-END' or '1' (e.g. '2018-2026').")
+
+    skip_initial_sync = os.getenv("SKIP_INITIAL_SYNC", "").strip().lower() in {"1", "true", "yes"}
+    if not skip_initial_sync:
+        run_initial_sync()
+    else:
+        logger.info("SKIP_INITIAL_SYNC enabled; skipping initial sync run.")
+
+    run_once = os.getenv("RUN_ONCE", "").strip().lower() in {"1", "true", "yes"}
+    if run_once:
+        logger.info("RUN_ONCE enabled; exiting after initial sync/backfills.")
+        return
 
     schedule.every(5).minutes.do(scheduled_status_check)
     schedule.every(1).hours.do(scheduled_results_check)
     schedule.every(6).hours.do(scheduled_generate_previews)
+    schedule.every(2).hours.do(scheduled_youtube_highlights)
     schedule.every(24).hours.do(scheduled_calendar_refresh)
 
     logger.info("Scheduled tasks registered. Entering main loop...")

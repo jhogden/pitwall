@@ -71,9 +71,11 @@ make dev    # starts infra + frontend dev server
 
 | Command | Description |
 |---------|-------------|
-| `make ingest-once` | Run a one-time data-services sync immediately |
-| `make ingest-backfill-wec YEARS=2012-2025` | Backfill WEC historical calendars |
-| `make ingest-backfill-imsa YEARS=2014-2025` | Backfill IMSA historical calendars |
+| `make ingest-once` | Run a one-time data-services sync immediately and exit |
+| `make ingest-backfill-wec YEARS=2012-2025` | Backfill WEC historical calendars (one-shot) |
+| `make ingest-backfill-imsa YEARS=2014-2025` | Backfill IMSA historical calendars (one-shot) |
+| `make ingest-backfill-f1-tires YEARS=2018-2026` | Backfill F1 tire stints/compounds from FastF1 (one-shot) |
+| `make ingest-backfill-f1-track-maps YEARS=2018-2026` | Backfill F1 circuit `track_map_url` images from OpenF1 (one-shot) |
 
 ### Database
 

@@ -7,6 +7,7 @@ import fastf1
 import pandas as pd
 import requests
 from sqlalchemy.orm import Session as DbSession
+from sqlalchemy import text
 
 from ingestion.config import db_session
 from ingestion.models import Series, Season, Circuit, Event, Session, Team, Driver, Result
@@ -153,6 +154,84 @@ def _fetch_jolpica_schedule(year: int) -> Optional[list]:
         return None
 
 
+def _to_int(value) -> Optional[int]:
+    if value is None or (isinstance(value, float) and pd.isna(value)) or pd.isna(value):
+        return None
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _to_bool(value) -> Optional[bool]:
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text_value = str(value).strip().lower()
+    if text_value in {"true", "1", "yes"}:
+        return True
+    if text_value in {"false", "0", "no"}:
+        return False
+    return None
+
+
+def _extract_tire_stints_from_laps(laps_df: pd.DataFrame) -> list[dict]:
+    if laps_df is None or laps_df.empty:
+        return []
+
+    required_cols = {"DriverNumber", "LapNumber", "Stint"}
+    if not required_cols.issubset(set(laps_df.columns)):
+        return []
+
+    rows: list[dict] = []
+    base = laps_df.copy()
+    base = base[base["DriverNumber"].notna() & base["LapNumber"].notna() & base["Stint"].notna()]
+    if base.empty:
+        return []
+
+    for driver_number, driver_laps in base.groupby("DriverNumber"):
+        driver_sorted = driver_laps.sort_values("LapNumber")
+        for stint_no, stint_rows in driver_sorted.groupby("Stint"):
+            stint_sorted = stint_rows.sort_values("LapNumber")
+            lap_start = _to_int(stint_sorted["LapNumber"].min())
+            lap_end = _to_int(stint_sorted["LapNumber"].max())
+            stint_number = _to_int(stint_no)
+            if stint_number is None or lap_start is None or lap_end is None:
+                continue
+
+            compound = None
+            if "Compound" in stint_sorted.columns:
+                compounds = [str(value).strip() for value in stint_sorted["Compound"] if pd.notna(value)]
+                if compounds:
+                    compound = compounds[0]
+
+            tyre_age_at_start = None
+            if "TyreLife" in stint_sorted.columns:
+                tyre_age_at_start = _to_int(stint_sorted["TyreLife"].dropna().iloc[0]) if not stint_sorted["TyreLife"].dropna().empty else None
+
+            is_new_tyre = None
+            if "FreshTyre" in stint_sorted.columns:
+                non_null = stint_sorted["FreshTyre"].dropna()
+                is_new_tyre = _to_bool(non_null.iloc[0]) if not non_null.empty else None
+
+            rows.append(
+                {
+                    "driver_number": str(driver_number).strip(),
+                    "stint_number": stint_number,
+                    "compound": compound,
+                    "lap_start": lap_start,
+                    "lap_end": lap_end,
+                    "tyre_age_at_start": tyre_age_at_start,
+                    "is_new_tyre": is_new_tyre,
+                }
+            )
+
+    return rows
+
+
 class F1Ingestion:
 
     def sync_calendar(self, year: int) -> None:
@@ -290,18 +369,34 @@ class F1Ingestion:
                 return
 
             existing_count = db.query(Result).filter(Result.session_id == db_session_obj.id).count()
-            if existing_count > 0:
-                return
 
             if session_code == "R":
                 # Use Jolpica API for race results (correct official classifications)
-                jolpica_results = _fetch_jolpica_results(year, round_number)
-                if not jolpica_results:
-                    logger.warning("No Jolpica results for F1 %d Round %d", year, round_number)
-                    return
-                self._create_results_from_jolpica(db, series, jolpica_results, db_session_obj)
+                if existing_count == 0:
+                    jolpica_results = _fetch_jolpica_results(year, round_number)
+                    if not jolpica_results:
+                        logger.warning("No Jolpica results for F1 %d Round %d", year, round_number)
+                        return
+                    self._create_results_from_jolpica(db, series, jolpica_results, db_session_obj)
+                else:
+                    logger.debug("Skipping race result insert for %d R%d (already present)", year, round_number)
+
+                if year >= 2018:
+                    try:
+                        f1_session = fastf1.get_session(year, round_number, "R")
+                        f1_session.load()
+                        self._upsert_tire_stints_from_fastf1(db, series, f1_session, db_session_obj)
+                    except Exception:
+                        logger.warning(
+                            "Could not sync tire stints for F1 %d Round %d",
+                            year,
+                            round_number,
+                            exc_info=True,
+                        )
             else:
                 # Use FastF1 for non-race sessions (qualifying, sprint)
+                if existing_count > 0:
+                    return
                 f1_session = fastf1.get_session(year, round_number, session_code)
                 f1_session.load()
                 results_df = f1_session.results
@@ -316,6 +411,117 @@ class F1Ingestion:
                 target_event.status = "completed"
 
         logger.info("F1 %d Round %d %s sync complete.", year, round_number, session_code)
+
+    def _upsert_tire_stints_from_fastf1(self, db: DbSession, series: Series, f1_session, session: Session) -> None:
+        self._ensure_tire_stints_table(db)
+        laps_df = f1_session.laps
+        rows = _extract_tire_stints_from_laps(laps_df)
+        if not rows:
+            return
+
+        driver_rows = (
+            db.execute(
+                text(
+                    """
+                    SELECT DISTINCT d.id, d.number
+                    FROM results r
+                    JOIN drivers d ON d.id = r.driver_id
+                    WHERE r.session_id = :session_id
+                    """
+                ),
+                {"session_id": session.id},
+            )
+            .mappings()
+            .all()
+        )
+        number_to_driver_id = {str(row["number"]): row["id"] for row in driver_rows if row["number"] is not None}
+
+        # For sessions without persisted results yet, build/update driver mapping
+        # from FastF1's own session results so stint upsert is not blocked.
+        f1_results = getattr(f1_session, "results", None)
+        if f1_results is not None and not f1_results.empty:
+            for _, result_row in f1_results.iterrows():
+                raw_number = result_row.get("DriverNumber")
+                if pd.isna(raw_number):
+                    continue
+                driver_number = int(raw_number)
+                key = str(driver_number)
+                if key in number_to_driver_id:
+                    continue
+
+                first_name = str(result_row.get("FirstName", "")).strip()
+                last_name = str(result_row.get("LastName", "")).strip()
+                if not first_name and not last_name:
+                    fallback = str(result_row.get("Abbreviation", ""))
+                    first_name = fallback
+
+                team_name = str(result_row.get("TeamName", "Unknown")).strip() or "Unknown"
+                team = _find_or_create_team(db, series.id, team_name)
+                driver = _find_or_create_driver(db, first_name, last_name, driver_number, team.id)
+                number_to_driver_id[key] = driver.id
+
+        upserted = 0
+        for row in rows:
+            driver_id = number_to_driver_id.get(row["driver_number"])
+            if not driver_id:
+                continue
+            db.execute(
+                text(
+                    """
+                    INSERT INTO tire_stints (
+                        session_id, driver_id, stint_number, compound,
+                        lap_start, lap_end, tyre_age_at_start, is_new_tyre, source
+                    )
+                    VALUES (
+                        :session_id, :driver_id, :stint_number, :compound,
+                        :lap_start, :lap_end, :tyre_age_at_start, :is_new_tyre, 'fastf1'
+                    )
+                    ON CONFLICT (session_id, driver_id, stint_number) DO UPDATE SET
+                        compound = EXCLUDED.compound,
+                        lap_start = EXCLUDED.lap_start,
+                        lap_end = EXCLUDED.lap_end,
+                        tyre_age_at_start = EXCLUDED.tyre_age_at_start,
+                        is_new_tyre = EXCLUDED.is_new_tyre,
+                        source = EXCLUDED.source
+                    """
+                ),
+                {
+                    "session_id": session.id,
+                    "driver_id": driver_id,
+                    "stint_number": row["stint_number"],
+                    "compound": row["compound"],
+                    "lap_start": row["lap_start"],
+                    "lap_end": row["lap_end"],
+                    "tyre_age_at_start": row["tyre_age_at_start"],
+                    "is_new_tyre": row["is_new_tyre"],
+                },
+            )
+            upserted += 1
+
+        if upserted:
+            logger.info("Upserted %d tire stints for session %s", upserted, session.id)
+
+    def _ensure_tire_stints_table(self, db: DbSession) -> None:
+        db.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS tire_stints (
+                    id BIGSERIAL PRIMARY KEY,
+                    session_id BIGINT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    driver_id BIGINT NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+                    stint_number INTEGER NOT NULL,
+                    compound VARCHAR(50),
+                    lap_start INTEGER NOT NULL,
+                    lap_end INTEGER NOT NULL,
+                    tyre_age_at_start INTEGER,
+                    is_new_tyre BOOLEAN,
+                    source VARCHAR(30),
+                    created_at TIMESTAMPTZ DEFAULT NOW(),
+                    CONSTRAINT uq_tire_stints_session_driver_stint UNIQUE (session_id, driver_id, stint_number)
+                )
+                """
+            )
+        )
 
     def _create_results(
         self, db: DbSession, series: Series, results_df: pd.DataFrame, session: Session
@@ -499,3 +705,24 @@ class F1Ingestion:
             except Exception:
                 logger.exception("Failed to sync results for %d Round %d", year, round_number)
             time.sleep(2)
+
+    def sync_tire_stints_for_year(self, year: int) -> None:
+        """Backfill F1 race tire stints from FastF1 for a season (2018+)."""
+        if year < 2018:
+            logger.info("Skipping F1 %d tire stints (FastF1 race lap data starts in 2018).", year)
+            return
+
+        logger.info("Syncing F1 %d tire stints...", year)
+        schedule = fastf1.get_event_schedule(year)
+        rounds = (
+            schedule["RoundNumber"]
+            .dropna()
+            .astype(int)
+            .tolist()
+        )
+        for round_number in rounds:
+            try:
+                self._sync_session_results(year, round_number, "R", "race")
+            except Exception:
+                logger.warning("Failed tire stint sync for F1 %d Round %d", year, round_number, exc_info=True)
+            time.sleep(1)

@@ -8,6 +8,7 @@ import numpy as np
 from ingestion.f1_ingestion import (
     slugify,
     _derive_positions_from_laps,
+    _extract_tire_stints_from_laps,
     _fetch_jolpica_results,
     _fetch_jolpica_schedule,
     _find_or_create,
@@ -86,6 +87,37 @@ class TestDerivePositionsFromLaps(unittest.TestCase):
 
         result = _derive_positions_from_laps(mock_session, results_df)
         self.assertTrue(result["Position"].isna().all())
+
+
+class TestExtractTireStintsFromLaps(unittest.TestCase):
+
+    def test_extracts_stints_with_compounds(self):
+        laps = pd.DataFrame({
+            "DriverNumber": ["1", "1", "1", "1", "1", "1"],
+            "LapNumber": [1, 2, 3, 4, 5, 6],
+            "Stint": [1, 1, 1, 2, 2, 2],
+            "Compound": ["SOFT", "SOFT", "SOFT", "MEDIUM", "MEDIUM", "MEDIUM"],
+            "TyreLife": [1, 2, 3, 1, 2, 3],
+            "FreshTyre": [True, True, True, False, False, False],
+        })
+
+        stints = _extract_tire_stints_from_laps(laps)
+
+        self.assertEqual(2, len(stints))
+        self.assertEqual(1, stints[0]["stint_number"])
+        self.assertEqual("SOFT", stints[0]["compound"])
+        self.assertEqual(1, stints[0]["lap_start"])
+        self.assertEqual(3, stints[0]["lap_end"])
+        self.assertTrue(stints[0]["is_new_tyre"])
+        self.assertEqual(2, stints[1]["stint_number"])
+        self.assertEqual("MEDIUM", stints[1]["compound"])
+        self.assertEqual(4, stints[1]["lap_start"])
+        self.assertEqual(6, stints[1]["lap_end"])
+
+    def test_returns_empty_for_missing_columns(self):
+        laps = pd.DataFrame({"DriverNumber": ["1"], "LapNumber": [1]})
+        stints = _extract_tire_stints_from_laps(laps)
+        self.assertEqual([], stints)
 
     def test_returns_unchanged_when_laps_is_none(self):
         results_df = pd.DataFrame({
