@@ -337,6 +337,16 @@ def main() -> None:
         except ValueError:
             logger.error("Invalid F1_TIRE_STINT_SYNC format. Expected 'START-END' (e.g. '2018-2026').")
 
+    f1_lap_telemetry_backfill = os.getenv("F1_LAP_TELEMETRY_SYNC")
+    if f1_lap_telemetry_backfill:
+        try:
+            start_str, end_str = f1_lap_telemetry_backfill.split("-", 1)
+            f1 = F1Ingestion()
+            for year in range(int(start_str), int(end_str) + 1):
+                f1.sync_lap_telemetry_for_year(year)
+        except ValueError:
+            logger.error("Invalid F1_LAP_TELEMETRY_SYNC format. Expected 'START-END' (e.g. '2018-2026').")
+
     f1_track_map_sync = os.getenv("F1_TRACK_MAP_SYNC")
     if f1_track_map_sync:
         try:

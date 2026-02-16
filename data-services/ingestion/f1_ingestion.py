@@ -232,6 +232,103 @@ def _extract_tire_stints_from_laps(laps_df: pd.DataFrame) -> list[dict]:
     return rows
 
 
+def _format_timedelta(value) -> Optional[str]:
+    if value is None or pd.isna(value):
+        return None
+    td = pd.to_timedelta(value)
+    if pd.isna(td):
+        return None
+    total_seconds = td.total_seconds()
+    if total_seconds < 0:
+        return None
+    hours = int(total_seconds // 3600)
+    minutes = int((total_seconds % 3600) // 60)
+    seconds = total_seconds - (hours * 3600 + minutes * 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{seconds:06.3f}"
+    return f"{minutes}:{seconds:06.3f}"
+
+
+def _format_float(value) -> Optional[str]:
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return f"{float(value):.3f}".rstrip("0").rstrip(".")
+    except Exception:
+        return None
+
+
+def _format_seconds(seconds) -> Optional[str]:
+    if seconds is None:
+        return None
+    try:
+        value = float(seconds)
+    except Exception:
+        return None
+    if value < 0:
+        return None
+    minutes = int(value // 60)
+    rem = value - minutes * 60
+    return f"{minutes}:{rem:06.3f}"
+
+
+def _extract_f1_lap_telemetry_from_laps(laps_df: pd.DataFrame) -> list[dict]:
+    if laps_df is None or laps_df.empty:
+        return []
+
+    required_cols = {"DriverNumber", "LapNumber"}
+    if not required_cols.issubset(set(laps_df.columns)):
+        return []
+
+    rows: list[dict] = []
+    speeds = ["SpeedST", "SpeedFL", "SpeedI2", "SpeedI1"]
+
+    base = laps_df.copy()
+    base = base[base["DriverNumber"].notna() & base["LapNumber"].notna()]
+    if base.empty:
+        return []
+
+    for _, row in base.iterrows():
+        car_number = str(row.get("DriverNumber", "")).strip()
+        if not car_number:
+            continue
+        lap_number = _to_int(row.get("LapNumber"))
+        if lap_number is None:
+            continue
+
+        numeric_speeds = []
+        for speed_col in speeds:
+            if speed_col in row and pd.notna(row[speed_col]):
+                try:
+                    numeric_speeds.append(float(row[speed_col]))
+                except Exception:
+                    continue
+
+        average_speed = _format_float(sum(numeric_speeds) / len(numeric_speeds)) if numeric_speeds else None
+        top_speed = _format_float(max(numeric_speeds)) if numeric_speeds else None
+
+        rows.append(
+            {
+                "car_number": car_number,
+                "lap_number": lap_number,
+                "position": _to_int(row.get("Position")),
+                "lap_time": _format_timedelta(row.get("LapTime")),
+                "sector1_time": _format_timedelta(row.get("Sector1Time")),
+                "sector2_time": _format_timedelta(row.get("Sector2Time")),
+                "sector3_time": _format_timedelta(row.get("Sector3Time")),
+                "sector4_time": _format_timedelta(row.get("Sector4Time")),
+                "average_speed_kph": average_speed,
+                "top_speed_kph": top_speed,
+                "session_elapsed": _format_timedelta(row.get("Time")),
+                "lap_timestamp": row.get("LapStartDate"),
+                "is_valid": _to_bool(row.get("IsAccurate")),
+                "crossing_pit_finish_lane": _to_bool(row.get("PitOutTime")),
+            }
+        )
+
+    return rows
+
+
 class F1Ingestion:
 
     def sync_calendar(self, year: int) -> None:
@@ -726,3 +823,195 @@ class F1Ingestion:
             except Exception:
                 logger.warning("Failed tire stint sync for F1 %d Round %d", year, round_number, exc_info=True)
             time.sleep(1)
+
+    def sync_lap_telemetry_for_year(self, year: int) -> None:
+        """Backfill F1 race lap telemetry from OpenF1 for a season (2018+)."""
+        if year < 2018:
+            logger.info("Skipping F1 %d lap telemetry (OpenF1 race lap data starts in 2018).", year)
+            return
+
+        logger.info("Syncing F1 %d lap telemetry...", year)
+        try:
+            openf1_sessions = requests.get(
+                "https://api.openf1.org/v1/sessions",
+                params={"year": year, "session_name": "Race"},
+                timeout=30,
+            ).json()
+        except Exception:
+            logger.warning("Could not fetch OpenF1 race sessions for %d", year, exc_info=True)
+            return
+
+        with db_session() as db:
+            series = _get_series(db)
+            if not series:
+                return
+            season = db.query(Season).filter(Season.series_id == series.id, Season.year == year).first()
+            if not season:
+                logger.warning("F1 season %d not found; run calendar sync first", year)
+                return
+
+            race_sessions = (
+                db.query(Session, Event)
+                .join(Event, Event.id == Session.event_id)
+                .filter(Event.season_id == season.id, Session.type == "race")
+                .all()
+            )
+            if not race_sessions:
+                logger.warning("No F1 race sessions found for %d", year)
+                return
+
+            upsert_sql = text(
+                """
+                INSERT INTO lap_telemetry (
+                    session_id, driver_id, car_number, lap_number, position, lap_time,
+                    sector1_time, sector2_time, sector3_time, sector4_time,
+                    average_speed_kph, top_speed_kph, session_elapsed, lap_timestamp,
+                    is_valid, crossing_pit_finish_lane
+                )
+                VALUES (
+                    :session_id, :driver_id, :car_number, :lap_number, :position, :lap_time,
+                    :sector1_time, :sector2_time, :sector3_time, :sector4_time,
+                    :average_speed_kph, :top_speed_kph, :session_elapsed, :lap_timestamp,
+                    :is_valid, :crossing_pit_finish_lane
+                )
+                ON CONFLICT (session_id, car_number, lap_number) DO UPDATE SET
+                    driver_id = EXCLUDED.driver_id,
+                    position = EXCLUDED.position,
+                    lap_time = EXCLUDED.lap_time,
+                    sector1_time = EXCLUDED.sector1_time,
+                    sector2_time = EXCLUDED.sector2_time,
+                    sector3_time = EXCLUDED.sector3_time,
+                    sector4_time = EXCLUDED.sector4_time,
+                    average_speed_kph = EXCLUDED.average_speed_kph,
+                    top_speed_kph = EXCLUDED.top_speed_kph,
+                    session_elapsed = EXCLUDED.session_elapsed,
+                    lap_timestamp = EXCLUDED.lap_timestamp,
+                    is_valid = EXCLUDED.is_valid,
+                    crossing_pit_finish_lane = EXCLUDED.crossing_pit_finish_lane
+                """
+            )
+
+            for race_session, event in race_sessions:
+                try:
+                    if not openf1_sessions:
+                        continue
+                    race_start = race_session.start_time
+                    best_openf1 = None
+                    best_delta = None
+                    for candidate in openf1_sessions:
+                        date_start = candidate.get("date_start")
+                        if not date_start:
+                            continue
+                        try:
+                            candidate_dt = datetime.fromisoformat(str(date_start).replace("Z", "+00:00"))
+                        except Exception:
+                            continue
+                        delta = abs((candidate_dt - race_start).total_seconds())
+                        if best_delta is None or delta < best_delta:
+                            best_delta = delta
+                            best_openf1 = candidate
+
+                    if not best_openf1 or best_delta is None or best_delta > 60 * 60 * 72:
+                        logger.warning("No OpenF1 race session match for %s", event.slug)
+                        continue
+
+                    session_key = best_openf1.get("session_key")
+                    if not session_key:
+                        continue
+
+                    driver_payload = requests.get(
+                        "https://api.openf1.org/v1/drivers",
+                        params={"session_key": session_key},
+                        timeout=30,
+                    ).json()
+                    laps_payload = requests.get(
+                        "https://api.openf1.org/v1/laps",
+                        params={"session_key": session_key},
+                        timeout=30,
+                    ).json()
+                    if not laps_payload:
+                        continue
+
+                    number_to_driver_id: dict[str, int] = {}
+                    for driver_row in driver_payload:
+                        raw_number = driver_row.get("driver_number")
+                        if raw_number is None:
+                            continue
+                        driver_number = int(raw_number)
+                        first_name = str(driver_row.get("first_name", "")).strip()
+                        last_name = str(driver_row.get("last_name", "")).strip()
+                        full_name = str(driver_row.get("full_name", "")).strip()
+                        if full_name and (not first_name and not last_name):
+                            parts = full_name.split(" ", 1)
+                            first_name = parts[0]
+                            last_name = parts[1] if len(parts) > 1 else ""
+                        if not first_name and not last_name:
+                            first_name = str(driver_row.get("name_acronym", "")).strip()
+
+                        team_name = str(driver_row.get("team_name", "Unknown")).strip() or "Unknown"
+                        team = _find_or_create_team(db, series.id, team_name)
+                        team_color = str(driver_row.get("team_colour", "")).strip()
+                        if team_color:
+                            if not team_color.startswith("#"):
+                                team_color = f"#{team_color}"
+                            team.color = team_color
+
+                        driver = _find_or_create_driver(db, first_name, last_name, driver_number, team.id)
+                        number_to_driver_id[str(driver_number)] = driver.id
+
+                    upserted = 0
+                    for lap in laps_payload:
+                        raw_driver_number = lap.get("driver_number")
+                        raw_lap_number = lap.get("lap_number")
+                        if raw_driver_number is None or raw_lap_number is None:
+                            continue
+                        car_number = str(int(raw_driver_number))
+                        lap_number = int(raw_lap_number)
+
+                        i1_speed = lap.get("i1_speed")
+                        i2_speed = lap.get("i2_speed")
+                        st_speed = lap.get("st_speed")
+                        numeric_speeds = [float(v) for v in (i1_speed, i2_speed, st_speed) if v is not None]
+                        average_speed = _format_float(sum(numeric_speeds) / len(numeric_speeds)) if numeric_speeds else None
+                        top_speed = _format_float(max(numeric_speeds)) if numeric_speeds else None
+
+                        sector1 = _format_seconds(lap.get("duration_sector_1"))
+                        sector2 = _format_seconds(lap.get("duration_sector_2"))
+                        sector3 = _format_seconds(lap.get("duration_sector_3"))
+                        lap_time = _format_seconds(lap.get("lap_duration"))
+
+                        lap_timestamp = None
+                        raw_date_start = lap.get("date_start")
+                        if raw_date_start:
+                            try:
+                                lap_timestamp = datetime.fromisoformat(str(raw_date_start).replace("Z", "+00:00"))
+                            except Exception:
+                                lap_timestamp = None
+
+                        db.execute(
+                            upsert_sql,
+                            {
+                                "session_id": race_session.id,
+                                "driver_id": number_to_driver_id.get(car_number),
+                                "car_number": car_number,
+                                "lap_number": lap_number,
+                                "position": None,
+                                "lap_time": lap_time,
+                                "sector1_time": sector1,
+                                "sector2_time": sector2,
+                                "sector3_time": sector3,
+                                "sector4_time": None,
+                                "average_speed_kph": average_speed,
+                                "top_speed_kph": top_speed,
+                                "session_elapsed": None,
+                                "lap_timestamp": lap_timestamp,
+                                "is_valid": lap_time is not None,
+                                "crossing_pit_finish_lane": _to_bool(lap.get("is_pit_out_lap")),
+                            },
+                        )
+                        upserted += 1
+
+                    logger.info("Synced F1 lap telemetry for %s (%d laps)", event.slug, upserted)
+                except Exception:
+                    logger.warning("Failed F1 lap telemetry sync for %s", event.slug, exc_info=True)
+                time.sleep(0.5)
