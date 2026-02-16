@@ -9,9 +9,14 @@ html {
 }
 
 body {
-  background-color: #0a0a0f;
+  background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(225, 6, 0, 0.12), transparent 60%),
+    radial-gradient(1000px 600px at 85% -20%, rgba(62, 201, 240, 0.11), transparent 60%),
+    radial-gradient(900px 500px at 50% 120%, rgba(250, 250, 70, 0.08), transparent 60%),
+    #0a0a0f;
   color: #e4e4ef;
   font-family: 'Inter', system-ui, sans-serif;
+  background-attachment: fixed;
 }
 
 /* Custom scrollbar */

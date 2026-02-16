@@ -7,7 +7,8 @@ import { CalendarDays, Radio, PlayCircle } from 'lucide-react'
 import FeedCard from '@/components/FeedCard'
 import { api } from '@/lib/api'
 import type { EventSummary, FeedItem } from '@/lib/api'
-import { SERIES_FILTERS } from '@/lib/constants'
+import { resolveSeriesColor, SERIES_FILTERS } from '@/lib/constants'
+import { HOMEPAGE_SERIES_SPOTLIGHT, seriesHeroBackground } from '@/lib/assets'
 
 function sortByPriority(a: EventSummary, b: EventSummary) {
   const rank = (status: string) => {
@@ -33,6 +34,7 @@ function compactRange(startDate: string, endDate: string): string {
 }
 
 export default function HomePage() {
+  const currentYear = new Date().getFullYear()
   const [feedItems, setFeedItems] = useState<FeedItem[]>([])
   const [highlights, setHighlights] = useState<FeedItem[]>([])
   const [liveEvents, setLiveEvents] = useState<EventSummary[]>([])
@@ -128,8 +130,11 @@ export default function HomePage() {
 
   return (
     <div className="space-y-8">
-      <section className="rounded-2xl border border-pitwall-border bg-gradient-to-br from-pitwall-surface to-pitwall-bg p-6 sm:p-8">
-        <p className="text-xs uppercase tracking-[0.2em] text-pitwall-text-muted">Pitwall</p>
+      <section className="relative overflow-hidden rounded-2xl border border-pitwall-border bg-gradient-to-br from-pitwall-surface via-[#12192a] to-pitwall-bg p-6 sm:p-8">
+        <div className="pointer-events-none absolute -right-16 -top-24 h-72 w-72 rounded-full bg-f1/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 left-[20%] h-72 w-72 rounded-full bg-wec/10 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 right-[20%] h-64 w-64 rounded-full bg-imsa/10 blur-3xl" />
+        <p className="relative text-xs uppercase tracking-[0.2em] text-pitwall-text-muted">Pitwall</p>
         <h1 className="mt-2 text-3xl sm:text-4xl font-semibold text-pitwall-text">
           Live timing, class battles, and race highlights in one place
         </h1>
@@ -150,6 +155,43 @@ export default function HomePage() {
           >
             Explore Series
           </Link>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-pitwall-text">Series Spotlight</h2>
+          <Link href="/series" className="text-xs text-pitwall-text-muted hover:text-pitwall-text">View all series</Link>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {HOMEPAGE_SERIES_SPOTLIGHT.map((series) => {
+            const color = resolveSeriesColor(series.slug)
+            return (
+              <Link
+                key={series.slug}
+                href={`/calendar/${currentYear}/${series.slug}`}
+                className="group relative overflow-hidden rounded-xl border border-pitwall-border bg-pitwall-surface p-4"
+                style={{ boxShadow: `inset 0 0 0 1px ${color}22` }}
+              >
+                <div
+                  className="pointer-events-none absolute inset-0 opacity-50 transition-opacity duration-300 group-hover:opacity-70"
+                  style={{ background: seriesHeroBackground(series.slug) }}
+                />
+                <img
+                  src={series.heroImageUrl}
+                  alt=""
+                  className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-25 transition-transform duration-300 group-hover:scale-105"
+                />
+                <div className="relative">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color }}>
+                    {series.slug.toUpperCase()}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-pitwall-text">{series.name}</p>
+                  <p className="mt-1 text-xs text-pitwall-text-muted">{series.tagline}</p>
+                </div>
+              </Link>
+            )
+          })}
         </div>
       </section>
 
@@ -198,8 +240,12 @@ export default function HomePage() {
                 <Link
                   key={event.id}
                   href={`/event/${event.seriesSlug}/${event.slug}`}
-                  className="rounded-xl border border-green-500/40 bg-green-500/5 p-4 hover:border-green-400/60 transition-colors"
+                  className="relative overflow-hidden rounded-xl border border-green-500/40 bg-green-500/5 p-4 hover:border-green-400/60 transition-colors"
                 >
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{ background: `linear-gradient(120deg, ${resolveSeriesColor(event.seriesSlug, event.seriesColor)}22 0%, transparent 65%)` }}
+                  />
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold tracking-wide text-green-400">LIVE</span>
                     <span className="text-xs text-pitwall-text-muted">{event.seriesName}</span>
@@ -216,14 +262,15 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="rounded-xl border border-pitwall-border bg-pitwall-surface p-4">
+          <div className="rounded-xl border border-pitwall-border bg-gradient-to-b from-pitwall-surface to-[#101626] p-4">
             <h3 className="text-sm font-semibold text-pitwall-text">Upcoming</h3>
             <div className="mt-3 space-y-2">
               {visibleUpcomingEvents.slice(0, 6).map(event => (
                 <Link
                   key={event.id}
                   href={`/event/${event.seriesSlug}/${event.slug}`}
-                  className="flex items-center justify-between rounded-lg px-2 py-2 hover:bg-pitwall-surface-2 transition-colors"
+                  className="flex items-center justify-between rounded-lg px-2 py-2 transition-colors hover:bg-pitwall-surface-2"
+                  style={{ borderLeft: `3px solid ${resolveSeriesColor(event.seriesSlug, event.seriesColor)}` }}
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm text-pitwall-text">{event.name}</p>

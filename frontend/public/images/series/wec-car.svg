@@ -1,0 +1,15 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" rx="28" fill="#071016"/>
+  <path d="M0 480C230 390 430 330 640 346C870 363 1010 288 1200 210V630H0V480Z" fill="#3EC9F0" fill-opacity="0.25"/>
+  <g stroke="#8DE6FF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M230 366H970"/>
+    <path d="M315 366L410 304H790L885 366"/>
+    <path d="M412 304L440 250H760L788 304"/>
+    <path d="M265 366L232 400H365"/>
+    <path d="M935 366L968 400H835"/>
+  </g>
+  <circle cx="365" cy="404" r="52" stroke="#D8F8FF" stroke-width="8"/>
+  <circle cx="835" cy="404" r="52" stroke="#D8F8FF" stroke-width="8"/>
+  <text x="72" y="96" fill="#DAF7FF" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700">WEC</text>
+  <text x="72" y="142" fill="#92E8FF" font-family="Inter, Arial, sans-serif" font-size="26">Illustrative placeholder</text>
+</svg>

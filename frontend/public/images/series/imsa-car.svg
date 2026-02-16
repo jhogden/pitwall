@@ -1,0 +1,15 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" rx="28" fill="#11110A"/>
+  <path d="M0 500C200 415 410 380 610 392C810 405 1020 350 1200 272V630H0V500Z" fill="#FAFA46" fill-opacity="0.2"/>
+  <g stroke="#FFFF9A" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M240 365H960"/>
+    <path d="M330 365L410 300H790L870 365"/>
+    <path d="M410 300L438 252H762L790 300"/>
+    <path d="M280 365L250 404H370"/>
+    <path d="M920 365L950 404H830"/>
+  </g>
+  <circle cx="370" cy="405" r="50" stroke="#FFFED7" stroke-width="8"/>
+  <circle cx="830" cy="405" r="50" stroke="#FFFED7" stroke-width="8"/>
+  <text x="72" y="96" fill="#FFFED1" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700">IMSA</text>
+  <text x="72" y="142" fill="#FFF99A" font-family="Inter, Arial, sans-serif" font-size="26">Illustrative placeholder</text>
+</svg>

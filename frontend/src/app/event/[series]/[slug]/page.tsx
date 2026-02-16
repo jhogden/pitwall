@@ -14,6 +14,7 @@ import TireStrategyCard from '@/components/TireStrategyCard'
 import RaceReplayCard from '@/components/RaceReplayCard'
 import { SESSION_TYPE_LABELS, STATUS_STYLES } from '@/lib/constants'
 import { resolveSeriesColor } from '@/lib/constants'
+import { getSeriesAsset, seriesHeroBackground } from '@/lib/assets'
 import { api } from '@/lib/api'
 import type { EventDetail, LapTelemetryPoint, Result, Session, TireStint } from '@/lib/api'
 
@@ -296,6 +297,7 @@ export default function EventDetailPage() {
     Boolean(selectedClass)
   const classIntervals = useClassIntervals ? computeClassIntervals(results) : []
   const podium = results.slice(0, 3)
+  const seriesAsset = getSeriesAsset(event.series.slug)
 
   return (
     <div>
@@ -311,9 +313,20 @@ export default function EventDetailPage() {
         className="rounded-xl p-6 mb-6 border relative overflow-hidden"
         style={{
           borderColor: `${seriesColor}30`,
-          background: `linear-gradient(135deg, ${seriesColor}08, transparent)`,
+          background: `linear-gradient(135deg, ${seriesColor}12, transparent)`,
         }}
       >
+        <div
+          className="pointer-events-none absolute inset-0 opacity-60"
+          style={{ background: seriesHeroBackground(event.series.slug) }}
+        />
+        {seriesAsset && (
+          <img
+            src={seriesAsset.heroImageUrl}
+            alt=""
+            className="pointer-events-none absolute inset-y-0 right-0 hidden h-full w-[42%] object-cover opacity-20 md:block"
+          />
+        )}
         {event.circuit.trackMapUrl && (
           <div className="pointer-events-none absolute -right-8 -top-6 hidden md:block opacity-20">
             <img
@@ -324,7 +337,7 @@ export default function EventDetailPage() {
           </div>
         )}
 
-        <div className="flex flex-wrap items-start justify-between gap-6 mb-4">
+        <div className="relative flex flex-wrap items-start justify-between gap-6 mb-4">
           <div className="max-w-2xl">
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <SeriesBadge name={event.series.name} color={seriesColor} />
@@ -348,7 +361,7 @@ export default function EventDetailPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 relative">
+        <div className="relative grid grid-cols-2 md:grid-cols-4 gap-2">
           <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
             <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Sessions</p>
             <p className="text-sm font-semibold text-pitwall-text">{event.sessions.length}</p>

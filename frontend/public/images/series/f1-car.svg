@@ -1,0 +1,15 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" rx="28" fill="#120A0A"/>
+  <path d="M0 520C160 420 330 390 540 405C770 420 980 350 1200 230V630H0V520Z" fill="#E10600" fill-opacity="0.22"/>
+  <g stroke="#FF4A42" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" opacity="0.9">
+    <path d="M210 358H980"/>
+    <path d="M340 358L410 305H790L860 358"/>
+    <path d="M420 305L445 255H755L780 305"/>
+    <path d="M315 358L290 396H400"/>
+    <path d="M885 358L910 396H800"/>
+  </g>
+  <circle cx="375" cy="400" r="48" stroke="#FFE2E2" stroke-width="8"/>
+  <circle cx="825" cy="400" r="48" stroke="#FFE2E2" stroke-width="8"/>
+  <text x="72" y="96" fill="#FFD7D7" font-family="Inter, Arial, sans-serif" font-size="44" font-weight="700">F1</text>
+  <text x="72" y="142" fill="#FF9B9B" font-family="Inter, Arial, sans-serif" font-size="26">Illustrative placeholder</text>
+</svg>

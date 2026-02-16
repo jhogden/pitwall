@@ -19,6 +19,7 @@ import { ChevronLeft, ChevronRight, List, Grid3X3, ChevronDown } from 'lucide-re
 import SeriesBadge from '@/components/SeriesBadge'
 import LiveIndicator from '@/components/LiveIndicator'
 import { resolveSeriesColor, SERIES_FILTERS, STATUS_STYLES } from '@/lib/constants'
+import { getSeriesAsset, seriesHeroBackground } from '@/lib/assets'
 import { api } from '@/lib/api'
 import type { EventSummary } from '@/lib/api'
 
@@ -116,87 +117,106 @@ export default function CalendarPage() {
     })
 
   const isQuickYear = QUICK_YEARS.includes(selectedYear)
+  const selectedSeriesAsset = getSeriesAsset(selectedSeries)
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-pitwall-text">Calendar</h1>
-          <div className="flex items-center gap-1 bg-pitwall-surface rounded-lg p-0.5">
-            {QUICK_YEARS.map(year => (
-              <Link
-                key={year}
-                href={`/calendar/${year}/${seriesPathValue(selectedSeries)}`}
-                className={`px-3 py-1.5 rounded-md text-sm font-mono font-medium transition-all ${
-                  selectedYear === year
-                    ? 'bg-pitwall-accent text-white'
-                    : 'text-pitwall-text-muted hover:text-pitwall-text'
-                }`}
-              >
-                {year}
-              </Link>
-            ))}
-            <div className="relative">
-              <button
-                onClick={() => setShowDropdown(prev => !prev)}
-                className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-mono font-medium transition-all ${
-                  !isQuickYear
-                    ? 'bg-pitwall-accent text-white'
-                    : 'text-pitwall-text-muted hover:text-pitwall-text'
-                }`}
-              >
-                {isQuickYear ? 'More' : selectedYear}
-                <ChevronDown size={14} />
-              </button>
-              {showDropdown && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
-                  <div className="absolute right-0 top-full mt-1 z-50 w-48 max-h-80 overflow-y-auto bg-pitwall-surface border border-pitwall-border rounded-lg shadow-xl">
-                    {Object.entries(yearsByDecade).map(([decade, years]) => (
-                      <div key={decade}>
-                        <div className="px-3 py-1.5 text-xs font-semibold text-pitwall-text-muted uppercase tracking-wide sticky top-0 bg-pitwall-surface">
-                          {decade}
+      <div className="relative mb-6 overflow-hidden rounded-xl border border-pitwall-border bg-pitwall-surface p-4 sm:p-5">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-60"
+          style={{ background: seriesHeroBackground(selectedSeries) }}
+        />
+        {selectedSeriesAsset && (
+          <img
+            src={selectedSeriesAsset.heroImageUrl}
+            alt=""
+            className="pointer-events-none absolute inset-y-0 right-0 hidden h-full w-[42%] object-cover opacity-20 md:block"
+          />
+        )}
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-3">
+            <div>
+              <h1 className="text-2xl font-bold text-pitwall-text">Calendar</h1>
+              <p className="text-sm text-pitwall-text-muted">
+                {selectedSeriesAsset ? `${selectedSeriesAsset.name} schedule` : 'All series schedule'} for {selectedYear}
+              </p>
+            </div>
+            <div className="flex items-center gap-1 rounded-lg bg-pitwall-surface/80 p-0.5">
+              {QUICK_YEARS.map(year => (
+                <Link
+                  key={year}
+                  href={`/calendar/${year}/${seriesPathValue(selectedSeries)}`}
+                  className={`px-3 py-1.5 rounded-md text-sm font-mono font-medium transition-all ${
+                    selectedYear === year
+                      ? 'bg-pitwall-accent text-white'
+                      : 'text-pitwall-text-muted hover:text-pitwall-text'
+                  }`}
+                >
+                  {year}
+                </Link>
+              ))}
+              <div className="relative">
+                <button
+                  onClick={() => setShowDropdown(prev => !prev)}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-sm font-mono font-medium transition-all ${
+                    !isQuickYear
+                      ? 'bg-pitwall-accent text-white'
+                      : 'text-pitwall-text-muted hover:text-pitwall-text'
+                  }`}
+                >
+                  {isQuickYear ? 'More' : selectedYear}
+                  <ChevronDown size={14} />
+                </button>
+                {showDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowDropdown(false)} />
+                    <div className="absolute right-0 top-full mt-1 z-50 w-48 max-h-80 overflow-y-auto bg-pitwall-surface border border-pitwall-border rounded-lg shadow-xl">
+                      {Object.entries(yearsByDecade).map(([decade, years]) => (
+                        <div key={decade}>
+                          <div className="px-3 py-1.5 text-xs font-semibold text-pitwall-text-muted uppercase tracking-wide sticky top-0 bg-pitwall-surface">
+                            {decade}
+                          </div>
+                          {years.map(year => (
+                            <button
+                              key={year}
+                              onClick={() => {
+                                setShowDropdown(false)
+                                router.push(`/calendar/${year}/${seriesPathValue(selectedSeries)}`)
+                              }}
+                              className={`w-full text-left px-3 py-1.5 text-sm font-mono hover:bg-pitwall-surface-2 transition-colors ${
+                                selectedYear === year ? 'text-pitwall-accent font-bold' : 'text-pitwall-text'
+                              }`}
+                            >
+                              {year}
+                            </button>
+                          ))}
                         </div>
-                        {years.map(year => (
-                          <button
-                            key={year}
-                            onClick={() => {
-                              setShowDropdown(false)
-                              router.push(`/calendar/${year}/${seriesPathValue(selectedSeries)}`)
-                            }}
-                            className={`w-full text-left px-3 py-1.5 text-sm font-mono hover:bg-pitwall-surface-2 transition-colors ${
-                              selectedYear === year ? 'text-pitwall-accent font-bold' : 'text-pitwall-text'
-                            }`}
-                          >
-                            {year}
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                    {Object.keys(yearsByDecade).length === 0 && (
-                      <div className="px-3 py-4 text-sm text-pitwall-text-muted text-center">
-                        No additional years available
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
+                      ))}
+                      {Object.keys(yearsByDecade).length === 0 && (
+                        <div className="px-3 py-4 text-sm text-pitwall-text-muted text-center">
+                          No additional years available
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex gap-1 bg-pitwall-surface rounded-lg p-1">
-          <button
-            onClick={() => setViewMode('list')}
-            className={`p-2 rounded ${viewMode === 'list' ? 'bg-pitwall-surface-2 text-pitwall-text' : 'text-pitwall-text-muted'}`}
-          >
-            <List size={18} />
-          </button>
-          <button
-            onClick={() => setViewMode('month')}
-            className={`p-2 rounded ${viewMode === 'month' ? 'bg-pitwall-surface-2 text-pitwall-text' : 'text-pitwall-text-muted'}`}
-          >
-            <Grid3X3 size={18} />
-          </button>
+          <div className="flex gap-1 rounded-lg bg-pitwall-surface/80 p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded ${viewMode === 'list' ? 'bg-pitwall-surface-2 text-pitwall-text' : 'text-pitwall-text-muted'}`}
+            >
+              <List size={18} />
+            </button>
+            <button
+              onClick={() => setViewMode('month')}
+              className={`p-2 rounded ${viewMode === 'month' ? 'bg-pitwall-surface-2 text-pitwall-text' : 'text-pitwall-text-muted'}`}
+            >
+              <Grid3X3 size={18} />
+            </button>
+          </div>
         </div>
       </div>
 
