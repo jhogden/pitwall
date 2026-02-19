@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Pause, Play, RotateCcw } from 'lucide-react'
 import type { LapTelemetryPoint } from '@/lib/api'
+import { hashString, generateTrackPoints, parseTrackGeometry, pathFromPoints } from '@/lib/track'
+import type { Pt } from '@/lib/track'
 
 interface RaceReplayCardProps {
   telemetry: LapTelemetryPoint[]
   trackMapUrl?: string | null
+  trackGeometry?: string | null
   trackSeed?: string
 }
 
@@ -40,7 +43,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
-const SPEEDS = [0.25, 0.5, 1, 2, 4]
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 10]
 const FALLBACK_COLORS = [
   '#EF4444', '#F97316', '#F59E0B', '#84CC16', '#22C55E', '#14B8A6',
   '#06B6D4', '#0EA5E9', '#3B82F6', '#6366F1', '#8B5CF6', '#D946EF',
@@ -69,15 +72,6 @@ function parseDurationToSeconds(raw: string | null): number | null {
   return Number.isFinite(s) ? s : null
 }
 
-function hashString(input: string): number {
-  let h = 2166136261
-  for (let i = 0; i < input.length; i += 1) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
 function looksPlaceholderColor(color: string | null | undefined): boolean {
   if (!color) return true
   const normalized = color.trim().toLowerCase()
@@ -87,40 +81,6 @@ function looksPlaceholderColor(color: string | null | undefined): boolean {
 function colorFromKey(key: string): string {
   const idx = hashString(key) % FALLBACK_COLORS.length
   return FALLBACK_COLORS[idx]
-}
-
-function mulberry32(seed: number): () => number {
-  return () => {
-    let t = (seed += 0x6d2b79f5)
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-type Pt = { x: number; y: number }
-
-function generateTrackPoints(seedText: string, count = 280): Pt[] {
-  const rand = mulberry32(hashString(seedText || 'pitwall'))
-  const a1 = 2 + rand() * 1.8
-  const a2 = 4 + rand() * 2.2
-  const p1 = rand() * Math.PI * 2
-  const p2 = rand() * Math.PI * 2
-  const p3 = rand() * Math.PI * 2
-  const baseR = 185 + rand() * 35
-  const squash = 0.52 + rand() * 0.18
-
-  const points: Pt[] = []
-  for (let i = 0; i <= count; i += 1) {
-    const t = (i / count) * Math.PI * 2
-    const r = baseR + 35 * Math.sin(a1 * t + p1) + 22 * Math.sin(a2 * t + p2)
-    const wobble = 22 * Math.sin(3 * t + p3)
-    points.push({
-      x: 500 + r * Math.cos(t) + wobble,
-      y: 280 + r * squash * Math.sin(t) - wobble * 0.25,
-    })
-  }
-  return points
 }
 
 function polylineLength(points: Pt[]): { lengths: number[]; total: number } {
@@ -151,11 +111,6 @@ function pointAtProgress(points: Pt[], lengths: number[], total: number, progres
   }
 }
 
-function pathFromPoints(points: Pt[]): string {
-  if (!points.length) return ''
-  return `M ${points.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`
-}
-
 function formatClock(totalSeconds: number): string {
   const safe = Math.max(0, Math.floor(totalSeconds))
   const h = Math.floor(safe / 3600)
@@ -165,9 +120,23 @@ function formatClock(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function formatGap(gapSec: number, lapsBehind: number): string {
+  if (lapsBehind >= 1) {
+    const fullLaps = Math.floor(lapsBehind)
+    return `+${fullLaps} Lap${fullLaps > 1 ? 's' : ''}`
+  }
+  if (gapSec >= 60) {
+    const minutes = Math.floor(gapSec / 60)
+    const remainder = gapSec - minutes * 60
+    return `+${minutes}m ${remainder.toFixed(1)}s`
+  }
+  return `+${gapSec.toFixed(1)}s`
+}
+
 export default function RaceReplayCard({
   telemetry,
   trackMapUrl = null,
+  trackGeometry = null,
   trackSeed = 'pitwall-track',
 }: RaceReplayCardProps) {
   const [currentTimeSec, setCurrentTimeSec] = useState(0)
@@ -192,13 +161,21 @@ export default function RaceReplayCard({
         : (rawTeamColor as string)
       const driverName = sorted[0]?.driverName || `Car ${sorted[0]?.carNumber || ''}`.trim()
       const driverColor = colorFromKey(`driver|${driverName.toLowerCase()}|${sorted[0]?.carNumber || ''}`)
+      // Check if this dataset has real sessionElapsed values
+      const hasRealElapsed = sorted.some(row => row.sessionElapsed !== null && row.sessionElapsed !== '')
       let fallbackElapsed = 0
-      const samples = sorted.map(row => {
+      const samples = sorted.map((row, idx) => {
         const parsedElapsed = parseDurationToSeconds(row.sessionElapsed)
         let elapsed = parsedElapsed
         if (elapsed === null) {
           const lapTime = parseDurationToSeconds(row.lapTime)
-          fallbackElapsed += lapTime ?? 90
+          if (!hasRealElapsed && idx === 0) {
+            // Lap 1 includes formation/out lap — don't count it as racing time.
+            // Start everyone at 0 so the replay begins immediately.
+            fallbackElapsed = 0
+          } else {
+            fallbackElapsed += lapTime ?? 90
+          }
           elapsed = fallbackElapsed
         } else {
           fallbackElapsed = elapsed
@@ -223,12 +200,18 @@ export default function RaceReplayCard({
         samples,
       }
     })
-    const globalStart = built.reduce(
+    // Filter out drivers with no movement (e.g. DNS — single lap with no time)
+    const meaningful = built.filter(driver => {
+      const last = driver.samples[driver.samples.length - 1]
+      return last && last.elapsedSec > 0
+    })
+
+    const globalStart = meaningful.reduce(
       (min, driver) => Math.min(min, driver.samples[0]?.elapsedSec ?? Number.POSITIVE_INFINITY),
       Number.POSITIVE_INFINITY
     )
-    if (!Number.isFinite(globalStart)) return built
-    return built.map(driver => ({
+    if (!Number.isFinite(globalStart) || globalStart <= 0) return meaningful
+    return meaningful.map(driver => ({
       ...driver,
       samples: driver.samples.map(sample => ({
         ...sample,
@@ -272,7 +255,7 @@ export default function RaceReplayCard({
   const frameDrivers = useMemo(() => {
     const active = driverStates.map(driver => {
       if (!driver.samples.length) {
-        return { ...driver, completedLapsFloat: 0, position: 999, lapLabel: 0 }
+        return { ...driver, completedLapsFloat: 0, position: 999, lapLabel: 0, gapText: '' }
       }
       const samples = driver.samples
       const firstSample = samples[0]
@@ -282,6 +265,7 @@ export default function RaceReplayCard({
           completedLapsFloat: 0,
           position: firstSample.position ?? 999,
           lapLabel: 0,
+          gapText: '',
         }
       }
       let idx = 0
@@ -306,16 +290,46 @@ export default function RaceReplayCard({
         completedLapsFloat: Math.max(0, lapsFloat),
         position: pos,
         lapLabel: Math.max(1, Math.floor(lapsFloat) + 1),
+        gapText: '',
       }
     })
-    return active.sort((a, b) => {
+
+    const sorted = active.sort((a, b) => {
       if (a.position !== b.position) return a.position - b.position
       return b.completedLapsFloat - a.completedLapsFloat
     })
+
+    if (sorted.length > 0) {
+      const leader = sorted[0]
+      const leaderLaps = leader.completedLapsFloat
+      const leaderSamples = leader.samples
+      const leaderAvgLapTime = leaderSamples.length >= 2
+        ? (leaderSamples[leaderSamples.length - 1].elapsedSec - leaderSamples[0].elapsedSec) /
+          Math.max(1, leaderSamples[leaderSamples.length - 1].lapNumber - leaderSamples[0].lapNumber)
+        : 90
+
+      sorted[0] = { ...sorted[0], gapText: 'LEADER' }
+      for (let i = 1; i < sorted.length; i += 1) {
+        const lapsBehind = leaderLaps - sorted[i].completedLapsFloat
+        const gapSec = lapsBehind * leaderAvgLapTime
+        sorted[i] = { ...sorted[i], gapText: formatGap(gapSec, lapsBehind) }
+      }
+    }
+
+    return sorted
   }, [currentTimeSec, driverStates])
 
   const currentLap = Math.max(...frameDrivers.map(driver => Math.floor(driver.completedLapsFloat || 0)), 0)
-  const trackPoints = useMemo(() => generateTrackPoints(trackSeed), [trackSeed])
+  const trackPoints = useMemo(() => {
+    if (trackGeometry) {
+      try {
+        return parseTrackGeometry(trackGeometry, { width: 1000, height: 560, padding: 40 })
+      } catch {
+        // fall through to procedural generation
+      }
+    }
+    return generateTrackPoints(trackSeed)
+  }, [trackGeometry, trackSeed])
   const { lengths: trackLengths, total: trackTotalLength } = useMemo(() => polylineLength(trackPoints), [trackPoints])
   const trackPath = useMemo(() => pathFromPoints(trackPoints), [trackPoints])
 
@@ -382,9 +396,9 @@ export default function RaceReplayCard({
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr,1fr] gap-4 p-3">
-        <div className="rounded-lg border border-pitwall-border bg-pitwall-surface p-3 min-h-[250px] relative overflow-hidden">
-          {trackMapUrl && (
+      <div className="grid grid-cols-1 gap-4 p-3">
+        <div className="rounded-lg border border-pitwall-border bg-pitwall-surface p-3 min-h-[320px] relative overflow-hidden">
+          {trackMapUrl && !trackGeometry && (
             <img
               src={trackMapUrl}
               alt=""
@@ -403,26 +417,30 @@ export default function RaceReplayCard({
             {frameDrivers.map((driver, idx) => {
               const progress = driver.completedLapsFloat - Math.floor(driver.completedLapsFloat)
               const basePt = pointAtProgress(trackPoints, trackLengths, trackTotalLength, progress)
-              const angle = ((idx % 6) / 6) * Math.PI * 2
-              const x = basePt.x + Math.cos(angle) * 5
-              const y = basePt.y + Math.sin(angle) * 5
+              const angle = ((idx % 8) / 8) * Math.PI * 2
+              const x = basePt.x + Math.cos(angle) * 13
+              const y = basePt.y + Math.sin(angle) * 13
               return (
                 <g key={driver.key}>
                   <circle cx={x} cy={y} r="11" fill={driver.driverColor} stroke={driver.teamColor} strokeWidth="3" />
-                  <text x={x + 14} y={y + 4} fontSize="11" fill="#dbe4ff">
+                  <text
+                    x={x + 14}
+                    y={y + 4}
+                    fontSize="13"
+                    fill="#dbe4ff"
+                    style={{ paintOrder: 'stroke', stroke: '#0b1020', strokeWidth: 3 }}
+                  >
                     {initials(driver.name)}
                   </text>
-                  {idx < 10 && (
-                    <text
-                      x={x + 30}
-                      y={y + 4}
-                      fontSize="11"
-                      fill="#e5e7eb"
-                      style={{ paintOrder: 'stroke', stroke: '#0b1020', strokeWidth: 3 }}
-                    >
-                      {shortNameLabel(driver.name)}
-                    </text>
-                  )}
+                  <text
+                    x={x + 32}
+                    y={y + 4}
+                    fontSize="12"
+                    fill="#e5e7eb"
+                    style={{ paintOrder: 'stroke', stroke: '#0b1020', strokeWidth: 3 }}
+                  >
+                    {shortNameLabel(driver.name)}
+                  </text>
                 </g>
               )
             })}
@@ -430,16 +448,17 @@ export default function RaceReplayCard({
         </div>
 
         <div className="rounded-lg border border-pitwall-border bg-pitwall-surface overflow-hidden">
-          <div className="grid grid-cols-[2rem,1fr,3rem] gap-2 px-3 py-2 border-b border-pitwall-border text-[10px] uppercase tracking-wide text-pitwall-text-muted">
+          <div className="grid grid-cols-[2rem,1fr,5rem,3rem] gap-2 px-3 py-2 border-b border-pitwall-border text-[10px] uppercase tracking-wide text-pitwall-text-muted">
             <span className="text-right">Pos</span>
             <span>Driver</span>
+            <span className="text-right">Gap</span>
             <span className="text-right">Lap</span>
           </div>
-          <div className="max-h-[250px] overflow-y-auto">
+          <div className="max-h-[300px] overflow-y-auto">
             {frameDrivers.slice(0, 20).map((driver, idx) => (
               <div
                 key={driver.key}
-                className={`grid grid-cols-[2rem,1fr,3rem] gap-2 items-center px-3 py-1.5 text-sm ${
+                className={`grid grid-cols-[2rem,1fr,5rem,3rem] gap-2 items-center px-3 py-1.5 text-sm ${
                   idx % 2 === 1 ? 'bg-pitwall-bg/60' : ''
                 }`}
               >
@@ -453,6 +472,7 @@ export default function RaceReplayCard({
                   />
                   <span className="truncate text-pitwall-text">{driver.name}</span>
                 </div>
+                <span className="font-mono text-right text-pitwall-text-muted text-xs truncate">{driver.gapText}</span>
                 <span className="font-mono text-right text-pitwall-text-muted">{Math.floor(driver.completedLapsFloat)}</span>
               </div>
             ))}

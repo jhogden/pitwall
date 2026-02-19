@@ -47,6 +47,7 @@ class Circuit(Base):
     country = Column(String(100), nullable=False)
     city = Column(String(100), nullable=False)
     track_map_url = Column(Text)
+    track_geometry = Column(Text)
     timezone = Column(String(50), nullable=False)
 
     events = relationship("Event", back_populates="circuit")

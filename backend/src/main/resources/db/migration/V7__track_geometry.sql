@@ -1,0 +1,1 @@
+ALTER TABLE circuits ADD COLUMN IF NOT EXISTS track_geometry TEXT;

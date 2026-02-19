@@ -30,6 +30,9 @@ public class Circuit {
     @Column(name = "timezone")
     private String timezone;
 
+    @Column(name = "track_geometry")
+    private String trackGeometry;
+
     public Circuit() {
     }
 
@@ -79,5 +82,13 @@ public class Circuit {
 
     public void setTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public String getTrackGeometry() {
+        return trackGeometry;
+    }
+
+    public void setTrackGeometry(String trackGeometry) {
+        this.trackGeometry = trackGeometry;
     }
 }

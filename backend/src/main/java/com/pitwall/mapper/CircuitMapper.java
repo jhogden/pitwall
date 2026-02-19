@@ -14,7 +14,8 @@ public class CircuitMapper {
                 circuit.getCountry(),
                 circuit.getCity(),
                 circuit.getTrackMapUrl(),
-                circuit.getTimezone()
+                circuit.getTimezone(),
+                circuit.getTrackGeometry()
         );
     }
 }

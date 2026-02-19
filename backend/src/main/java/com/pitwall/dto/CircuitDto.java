@@ -6,6 +6,7 @@ public record CircuitDto(
         String country,
         String city,
         String trackMapUrl,
-        String timezone
+        String timezone,
+        String trackGeometry
 ) {
 }
