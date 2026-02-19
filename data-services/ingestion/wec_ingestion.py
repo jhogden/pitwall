@@ -44,6 +44,7 @@ class CircuitInfo:
 
 WEC_CIRCUIT_MAP = {
     "qatar 1812km": CircuitInfo("Lusail International Circuit", "Qatar", "Lusail", "Asia/Qatar", "qatar-1812km"),
+    "qatar 1812 km": CircuitInfo("Lusail International Circuit", "Qatar", "Lusail", "Asia/Qatar", "qatar-1812km"),
     "6 hours of imola": CircuitInfo("Autodromo Enzo e Dino Ferrari", "Italy", "Imola", "Europe/Rome", "6-hours-imola"),
     "totalenergies 6 hours of spa-francorchamps": CircuitInfo("Circuit de Spa-Francorchamps", "Belgium", "Stavelot", "Europe/Brussels", "totalenergies-6-hours-spa-francorchamps"),
     "24 hours of le mans": CircuitInfo("Circuit de la Sarthe", "France", "Le Mans", "Europe/Paris", "24-hours-le-mans"),
@@ -91,24 +92,39 @@ def _parse_wec_calendar_text(year: int, text: str) -> list[dict]:
 
     while i + 4 < len(lines):
         day1 = lines[i]
-        mon1 = lines[i + 1]
-        day2 = lines[i + 2]
-        mon2 = lines[i + 3]
-
-        if not (day1.isdigit() and day2.isdigit() and mon1 in MONTHS and mon2 in MONTHS):
+        mon1 = lines[i + 1] if i + 1 < len(lines) else ""
+        if not (day1.isdigit() and mon1 in MONTHS):
             i += 1
             continue
 
-        name = _normalize_wec_name(lines[i + 4])
-        if not name:
-            i += 5
+        # Standard FIA layout:
+        # day, month, name, location, country
+        # Le Mans special case:
+        # day, month, day, month, name, location, country
+        if i + 3 < len(lines) and lines[i + 2].isdigit() and lines[i + 3] in MONTHS:
+            day2 = lines[i + 2]
+            mon2 = lines[i + 3]
+            name_idx = i + 4
+        else:
+            day2 = day1
+            mon2 = mon1
+            name_idx = i + 2
+
+        if name_idx + 2 >= len(lines):
+            i += 1
+            continue
+
+        name = _normalize_wec_name(lines[name_idx])
+        country = lines[name_idx + 2]
+        if not name or not re.fullmatch(r"[A-Z]{3}", country):
+            i += 1
             continue
 
         try:
             start_date = datetime(year, MONTHS[mon1], int(day1), tzinfo=timezone.utc).date()
             end_date = datetime(year, MONTHS[mon2], int(day2), tzinfo=timezone.utc).date()
         except ValueError:
-            i += 5
+            i += 1
             continue
 
         events.append(
@@ -119,7 +135,8 @@ def _parse_wec_calendar_text(year: int, text: str) -> list[dict]:
                 "slug": _slugify(f"{year}-{name}"),
             }
         )
-        i += 5
+
+        i = name_idx + 3
 
     return events
 

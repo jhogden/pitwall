@@ -12,8 +12,10 @@ from ingestion.standings_ingestion import StandingsIngestion
 from ingestion.feed_generator import FeedGenerator
 from ingestion.youtube_highlights_ingestion import YoutubeHighlightsIngestion
 from ingestion.f1_track_map_ingestion import F1TrackMapIngestion
+from ingestion.track_geometry_ingestion import TrackGeometryIngestion
 from ingestion.config import db_session
 from ingestion.models import Event, Session, Result, Season, Series
+from sqlalchemy import text
 
 logging.basicConfig(
     level=logging.INFO,
@@ -201,6 +203,80 @@ def run_series_calendar_backfill(series_slug: str, start_year: int, end_year: in
     logger.info("%s calendar backfill complete.", series_slug.upper())
 
 
+def run_qualifying_sprint_backfill(start_year: int, end_year: int) -> None:
+    """Re-sync qualifying and sprint sessions that have results but no gap/time data."""
+    logger.info("Starting qualifying/sprint backfill: %d to %d", start_year, end_year)
+    f1 = F1Ingestion()
+
+    with db_session() as db:
+        rows = (
+            db.execute(
+                text(
+                    """
+                    SELECT DISTINCT e.slug, se.year
+                    FROM results r
+                    JOIN sessions s ON s.id = r.session_id
+                    JOIN events e ON e.id = s.event_id
+                    JOIN seasons se ON se.id = e.season_id
+                    JOIN series sr ON sr.id = se.series_id
+                    WHERE sr.slug = 'f1'
+                      AND s.type IN ('qualifying', 'sprint')
+                      AND se.year BETWEEN :start_year AND :end_year
+                      AND NOT EXISTS (
+                          SELECT 1 FROM results r2
+                          WHERE r2.session_id = s.id AND r2.gap IS NOT NULL
+                      )
+                    ORDER BY se.year, e.slug
+                    """
+                ),
+                {"start_year": start_year, "end_year": end_year},
+            )
+            .mappings()
+            .all()
+        )
+
+    if not rows:
+        logger.info("No qualifying/sprint sessions need backfill.")
+        return
+
+    # Delete results for affected sessions then re-sync
+    slugs_by_year: dict[int, list[str]] = {}
+    for row in rows:
+        slugs_by_year.setdefault(row["year"], []).append(row["slug"])
+
+    for year, slugs in slugs_by_year.items():
+        for slug in slugs:
+            logger.info("Backfilling qualifying/sprint for %s (%d)", slug, year)
+            with db_session() as db:
+                event = db.query(Event).filter(Event.slug == slug).first()
+                if not event:
+                    continue
+                sessions = (
+                    db.query(Session)
+                    .filter(Session.event_id == event.id, Session.type.in_(["qualifying", "sprint"]))
+                    .all()
+                )
+                for session in sessions:
+                    has_gap = db.execute(
+                        text("SELECT 1 FROM results WHERE session_id = :sid AND gap IS NOT NULL LIMIT 1"),
+                        {"sid": session.id},
+                    ).first()
+                    if not has_gap:
+                        db.execute(
+                            text("DELETE FROM results WHERE session_id = :sid"),
+                            {"sid": session.id},
+                        )
+                        logger.info("Deleted gap-less results for session %s (%s)", session.name, slug)
+
+            try:
+                f1.sync_all_session_results_by_slug(year, slug)
+            except Exception:
+                logger.exception("Failed backfill for %s (%d)", slug, year)
+            time.sleep(2)
+
+    logger.info("Qualifying/sprint backfill complete.")
+
+
 def run_initial_sync() -> None:
     """Run the initial data sync on startup."""
     logger.info("Starting initial data sync...")
@@ -346,6 +422,28 @@ def main() -> None:
                 f1.sync_lap_telemetry_for_year(year)
         except ValueError:
             logger.error("Invalid F1_LAP_TELEMETRY_SYNC format. Expected 'START-END' (e.g. '2018-2026').")
+
+    qualifying_sprint_backfill = os.getenv("QUALIFYING_SPRINT_BACKFILL")
+    if qualifying_sprint_backfill:
+        try:
+            start_str, end_str = qualifying_sprint_backfill.split("-", 1)
+            start_year, end_year = int(start_str), int(end_str)
+            run_qualifying_sprint_backfill(start_year, end_year)
+        except ValueError:
+            logger.error("Invalid QUALIFYING_SPRINT_BACKFILL format. Expected 'START-END' (e.g. '2024-2025').")
+
+    track_geometry_sync = os.getenv("TRACK_GEOMETRY_SYNC")
+    if track_geometry_sync:
+        try:
+            geom = TrackGeometryIngestion()
+            if "-" in track_geometry_sync:
+                start_str, end_str = track_geometry_sync.split("-", 1)
+                for y in range(int(start_str), int(end_str) + 1):
+                    geom.sync_track_geometry(y)
+            else:
+                geom.sync_track_geometry(int(track_geometry_sync))
+        except ValueError:
+            logger.error("Invalid TRACK_GEOMETRY_SYNC format. Expected 'YEAR' or 'START-END' (e.g. '2024' or '2023-2025').")
 
     f1_track_map_sync = os.getenv("F1_TRACK_MAP_SYNC")
     if f1_track_map_sync:

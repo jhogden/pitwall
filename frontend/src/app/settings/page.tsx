@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { SERIES_COLORS } from '@/lib/constants'
 
 const AVAILABLE_SERIES = [
@@ -142,6 +143,21 @@ export default function SettingsPage() {
               />
             </button>
           </div>
+        </div>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="text-lg font-semibold text-pitwall-text mb-4">Data</h2>
+        <div className="rounded-lg border border-pitwall-border bg-pitwall-surface p-4">
+          <p className="text-sm text-pitwall-text-muted mb-3">
+            Open the coverage dashboard to see data completeness by series and year.
+          </p>
+          <Link
+            href="/settings/data-coverage"
+            className="inline-flex items-center rounded-lg border border-pitwall-border px-3 py-2 text-sm text-pitwall-text hover:bg-pitwall-surface-2"
+          >
+            Open Data Coverage
+          </Link>
         </div>
       </section>
 

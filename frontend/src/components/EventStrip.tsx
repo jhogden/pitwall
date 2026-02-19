@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Check, Radio } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import { api, type EventSummary } from '@/lib/api'
+import { resolveSeriesColor } from '@/lib/constants'
 import SeriesBadge from '@/components/SeriesBadge'
 
 function formatDateRange(startDate: string, endDate: string): string {
@@ -238,7 +239,7 @@ export default function EventStrip() {
           ? [...liveEvents, ...upcomingEvents, ...completedEvents]
           : fallbackEvents
         ).map((event) => {
-          const seriesColor = event.seriesColor
+          const seriesColor = resolveSeriesColor(event.seriesSlug, event.seriesColor)
           return (
           <Link
             key={event.id}

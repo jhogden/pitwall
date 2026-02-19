@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import { CalendarDays, Radio, PlayCircle } from 'lucide-react'
 import FeedCard from '@/components/FeedCard'
+import FallbackImage from '@/components/FallbackImage'
 import { api } from '@/lib/api'
 import type { EventSummary, FeedItem } from '@/lib/api'
 import { resolveSeriesColor, SERIES_FILTERS } from '@/lib/constants'
@@ -177,9 +178,9 @@ export default function HomePage() {
                   className="pointer-events-none absolute inset-0 opacity-50 transition-opacity duration-300 group-hover:opacity-70"
                   style={{ background: seriesHeroBackground(series.slug) }}
                 />
-                <img
-                  src={series.heroImageUrl}
-                  alt=""
+                <FallbackImage
+                  candidates={series.heroImageCandidates}
+                  alt={`${series.name} car`}
                   className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-25 transition-transform duration-300 group-hover:scale-105"
                 />
                 <div className="relative">

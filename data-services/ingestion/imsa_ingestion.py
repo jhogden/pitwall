@@ -3,7 +3,7 @@ import logging
 import re
 import csv
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 from urllib.parse import unquote, urljoin
 
@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 
 SERIES_SLUG = "imsa"
 IMSA_RESULTS_BASE_URL = "https://imsa.results.alkamelcloud.com"
+WIKIPEDIA_IMSA_SEASON_URL = "https://en.wikipedia.org/wiki/{year}_IMSA_SportsCar_Championship"
+MONTH_NAME_TO_NUM = {
+    "january": 1,
+    "february": 2,
+    "march": 3,
+    "april": 4,
+    "may": 5,
+    "june": 6,
+    "july": 7,
+    "august": 8,
+    "september": 9,
+    "october": 10,
+    "november": 11,
+    "december": 12,
+}
 
 
 @dataclass(frozen=True)
@@ -59,6 +74,123 @@ def _normalize_class_name(raw: object) -> str:
 def _parse_event_name_from_dir(track_dir: str) -> str:
     decoded = unquote(track_dir).strip("/")
     return re.sub(r"^\d+_", "", decoded).strip()
+
+
+def _normalize_dedupe_text(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+def _parse_month_day_range(raw: str, year: int) -> Optional[tuple[date, date]]:
+    # Example values: "January 24–25", "May 8-10", "July 11"
+    normalized = (
+        str(raw or "")
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+        .replace("\xa0", " ")
+        .strip()
+    )
+    if not normalized:
+        return None
+
+    match = re.match(r"^([A-Za-z]+)\s+(\d{1,2})(?:\s*-\s*(\d{1,2}))?$", normalized)
+    if not match:
+        return None
+
+    month_name = match.group(1).lower()
+    month = MONTH_NAME_TO_NUM.get(month_name)
+    if not month:
+        return None
+
+    day_start = int(match.group(2))
+    day_end = int(match.group(3) or match.group(2))
+    try:
+        return date(year, month, day_start), date(year, month, day_end)
+    except ValueError:
+        return None
+
+
+def _discover_weathertech_events_from_wikipedia(year: int) -> list[dict]:
+    url = WIKIPEDIA_IMSA_SEASON_URL.format(year=year)
+    headers = {"User-Agent": "Mozilla/5.0 (PitwallBot; +https://pitwall.local)"}
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code != 200:
+            logger.warning("Wikipedia IMSA schedule fetch returned %d for %s", response.status_code, url)
+            return []
+    except Exception:
+        logger.exception("Failed to fetch IMSA fallback schedule from Wikipedia: %s", url)
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    events: list[dict] = []
+
+    for table in soup.find_all("table", class_="wikitable"):
+        header_cells = [th.get_text(" ", strip=True).lower() for th in table.find_all("th")]
+        if not any("rnd" in h for h in header_cells):
+            continue
+        if "race" not in " ".join(header_cells):
+            continue
+        if "date" not in " ".join(header_cells):
+            continue
+
+        rows = table.find_all("tr")
+        if not rows:
+            continue
+
+        # Find concrete column indexes from first header row.
+        first_headers = [th.get_text(" ", strip=True).lower() for th in rows[0].find_all("th")]
+        idx_map = {name: idx for idx, name in enumerate(first_headers)}
+
+        def idx_for(keyword: str) -> Optional[int]:
+            for key, idx in idx_map.items():
+                if keyword in key:
+                    return idx
+            return None
+
+        race_idx = idx_for("race")
+        circuit_idx = idx_for("circuit")
+        date_idx = idx_for("date")
+        if race_idx is None or date_idx is None:
+            continue
+
+        parsed: list[dict] = []
+        for tr in rows[1:]:
+            cells = tr.find_all(["td", "th"])
+            if not cells:
+                continue
+            vals = [c.get_text(" ", strip=True) for c in cells]
+            if race_idx >= len(vals) or date_idx >= len(vals):
+                continue
+
+            race_name = str(vals[race_idx]).strip()
+            date_range = _parse_month_day_range(vals[date_idx], year)
+            if not race_name or not date_range:
+                continue
+
+            circuit_name = race_name
+            if circuit_idx is not None and circuit_idx < len(vals):
+                circuit_name = str(vals[circuit_idx]).strip() or race_name
+
+            start_date, end_date = date_range
+            parsed.append(
+                {
+                    "name": race_name,
+                    "slug": _slugify(f"{year}-{race_name}"),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "circuit_name": circuit_name,
+                    "series_url": None,
+                    "race_dir": None,
+                }
+            )
+
+        if parsed:
+            logger.info("Discovered %d IMSA schedule events from Wikipedia fallback for %d", len(parsed), year)
+            events.extend(parsed)
+            break
+
+    return events
 
 
 def _fetch_directory_links(url: str) -> list[str]:
@@ -370,7 +502,36 @@ class ImsaIngestion:
                 }
             )
 
-        return events
+        # Official results index only includes posted/active events.
+        # For future calendar rounds, use a fallback source and merge.
+        fallback_events = _discover_weathertech_events_from_wikipedia(year)
+
+        merged: dict[str, dict] = {}
+        for event in [*fallback_events, *events]:
+            slug = event["slug"]
+            if slug not in merged:
+                merged[slug] = event
+            else:
+                merged[slug] = {**merged[slug], **event}
+
+        # Deduplicate event aliases (e.g. Daytona race title vs circuit name) by date+circuit.
+        deduped: dict[tuple, dict] = {}
+        for event in merged.values():
+            key = (
+                event.get("start_date"),
+                _normalize_dedupe_text(str(event.get("circuit_name") or event.get("name") or "")),
+            )
+            existing = deduped.get(key)
+            if not existing:
+                deduped[key] = event
+                continue
+
+            existing_is_official = bool(existing.get("series_url") and existing.get("race_dir"))
+            current_is_official = bool(event.get("series_url") and event.get("race_dir"))
+            if current_is_official and not existing_is_official:
+                deduped[key] = event
+
+        return sorted(deduped.values(), key=lambda e: (e.get("start_date") or date(year, 1, 1), e["slug"]))
 
     def _find_race_artifacts(self, series_url: str, race_dir: str) -> dict[str, str]:
         race_url = urljoin(series_url, race_dir)
@@ -530,6 +691,8 @@ class ImsaIngestion:
         discovered = self._discover_weathertech_events(year)
         event_to_json: dict[str, str] = {}
         for item in discovered:
+            if not item.get("series_url") or not item.get("race_dir"):
+                continue
             json_url = self._find_race_artifacts(item["series_url"], item["race_dir"]).get("results")
             if json_url:
                 event_to_json[item["slug"]] = json_url
@@ -609,6 +772,8 @@ class ImsaIngestion:
         discovered = self._discover_weathertech_events(year)
         event_to_artifacts: dict[str, dict[str, str]] = {}
         for item in discovered:
+            if not item.get("series_url") or not item.get("race_dir"):
+                continue
             artifacts = self._find_race_artifacts(item["series_url"], item["race_dir"])
             if artifacts.get("timecards") and artifacts.get("lapchart"):
                 event_to_artifacts[item["slug"]] = artifacts

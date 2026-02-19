@@ -4,19 +4,20 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
-import { ArrowLeft, MapPin } from 'lucide-react'
-import SeriesBadge from '@/components/SeriesBadge'
+import { ArrowLeft, MapPin, PlayCircle } from 'lucide-react'
 import LiveIndicator from '@/components/LiveIndicator'
 import SessionTimeline from '@/components/SessionTimeline'
 import RaceResultCard from '@/components/RaceResultCard'
 import TelemetryLiteCard from '@/components/TelemetryLiteCard'
 import TireStrategyCard from '@/components/TireStrategyCard'
 import RaceReplayCard from '@/components/RaceReplayCard'
+import FallbackImage from '@/components/FallbackImage'
 import { SESSION_TYPE_LABELS, STATUS_STYLES } from '@/lib/constants'
 import { resolveSeriesColor } from '@/lib/constants'
-import { getSeriesAsset, seriesHeroBackground } from '@/lib/assets'
+import { getWinnerCarImageCandidates, seriesHeroBackground } from '@/lib/assets'
 import { api } from '@/lib/api'
-import type { EventDetail, LapTelemetryPoint, Result, Session, TireStint } from '@/lib/api'
+import type { EventDetail, FeedItem, LapTelemetryPoint, Result, Session, TireStint } from '@/lib/api'
+import { generateTrackPoints, parseTrackGeometry, pathFromPoints } from '@/lib/track'
 
 const EVENT_STATUS_STYLES: Record<string, string> = {
   ...STATUS_STYLES,
@@ -27,54 +28,6 @@ const EVENT_STATUS_STYLES: Record<string, string> = {
 
 const SESSION_PRIORITY = ['race', 'sprint', 'qualifying']
 const LIVE_POLL_INTERVAL_MS = 5000
-
-type TrackPoint = { x: number; y: number }
-
-function hashString(input: string): number {
-  let h = 2166136261
-  for (let i = 0; i < input.length; i += 1) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
-function mulberry32(seed: number): () => number {
-  return () => {
-    let t = (seed += 0x6d2b79f5)
-    t = Math.imul(t ^ (t >>> 15), t | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
-function generateTrackPoints(seedText: string, count = 240): TrackPoint[] {
-  const rand = mulberry32(hashString(seedText || 'pitwall'))
-  const a1 = 2 + rand() * 1.8
-  const a2 = 4 + rand() * 2.2
-  const p1 = rand() * Math.PI * 2
-  const p2 = rand() * Math.PI * 2
-  const p3 = rand() * Math.PI * 2
-  const baseR = 145 + rand() * 28
-  const squash = 0.5 + rand() * 0.2
-
-  const points: TrackPoint[] = []
-  for (let i = 0; i <= count; i += 1) {
-    const t = (i / count) * Math.PI * 2
-    const r = baseR + 28 * Math.sin(a1 * t + p1) + 16 * Math.sin(a2 * t + p2)
-    const wobble = 16 * Math.sin(3 * t + p3)
-    points.push({
-      x: 220 + r * Math.cos(t) + wobble,
-      y: 135 + r * squash * Math.sin(t) - wobble * 0.2,
-    })
-  }
-  return points
-}
-
-function pathFromPoints(points: TrackPoint[]): string {
-  if (!points.length) return ''
-  return `M ${points.map(p => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')} Z`
-}
 
 function parseTimingToSeconds(raw: string | null): number | null {
   if (!raw) return null
@@ -173,6 +126,8 @@ export default function EventDetailPage() {
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
   const [showTelemetryModal, setShowTelemetryModal] = useState(false)
   const [preferredTelemetryDriver, setPreferredTelemetryDriver] = useState<{ name: string; carNumber: number | null } | null>(null)
+  const [highlights, setHighlights] = useState<FeedItem[]>([])
+  const [isLoadingHighlights, setIsLoadingHighlights] = useState(false)
 
   const isClassBasedSeries = event?.series.slug === 'wec' || event?.series.slug === 'imsa'
 
@@ -184,6 +139,14 @@ export default function EventDetailPage() {
         if (best) setSelectedSession(best)
       })
       .catch(() => {})
+  }, [slug])
+
+  useEffect(() => {
+    setIsLoadingHighlights(true)
+    api.getHighlights(0, 6, undefined, slug)
+      .then(page => setHighlights(page.content || []))
+      .catch(() => setHighlights([]))
+      .finally(() => setIsLoadingHighlights(false))
   }, [slug])
 
   useEffect(() => {
@@ -291,13 +254,16 @@ export default function EventDetailPage() {
   const raceSession = event.sessions.find(s => s.type === 'race')
   const seriesColor = resolveSeriesColor(event.series.slug, event.series.colorPrimary)
   const trackSeed = `${event.series.slug}-${event.slug}-${event.circuit.name}`
-  const trackPreviewPath = pathFromPoints(generateTrackPoints(trackSeed))
+  const trackPreviewPoints = event.circuit.trackGeometry
+    ? (() => { try { return parseTrackGeometry(event.circuit.trackGeometry, { width: 440, height: 270, padding: 20 }) } catch { return null } })()
+    : null
+  const trackPreviewPath = pathFromPoints(trackPreviewPoints || generateTrackPoints(trackSeed, { centerX: 220, centerY: 135, baseRadius: 145, count: 240 }))
   const useClassIntervals =
     (event.series.slug === 'wec' || event.series.slug === 'imsa') &&
     Boolean(selectedClass)
   const classIntervals = useClassIntervals ? computeClassIntervals(results) : []
   const podium = results.slice(0, 3)
-  const seriesAsset = getSeriesAsset(event.series.slug)
+  const winnerCarImageCandidates = getWinnerCarImageCandidates(event.slug, event.series.slug)
 
   return (
     <div>
@@ -320,63 +286,22 @@ export default function EventDetailPage() {
           className="pointer-events-none absolute inset-0 opacity-60"
           style={{ background: seriesHeroBackground(event.series.slug) }}
         />
-        {seriesAsset && (
-          <img
-            src={seriesAsset.heroImageUrl}
-            alt=""
-            className="pointer-events-none absolute inset-y-0 right-0 hidden h-full w-[42%] object-cover opacity-20 md:block"
-          />
-        )}
-        {event.circuit.trackMapUrl && (
-          <div className="pointer-events-none absolute -right-8 -top-6 hidden md:block opacity-20">
-            <img
-              src={event.circuit.trackMapUrl}
-              alt=""
-              className="h-44 w-80 object-contain"
-            />
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
+          <div className="max-w-3xl">
+            <span className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${EVENT_STATUS_STYLES[event.status] || ''}`}>
+              {event.status === 'live' && <LiveIndicator />}
+              {event.status === 'live' ? 'LIVE' : event.status}
+            </span>
+            <h1 className="mt-2 text-3xl font-bold text-pitwall-text">{event.name}</h1>
           </div>
-        )}
-
-        <div className="relative flex flex-wrap items-start justify-between gap-6 mb-4">
-          <div className="max-w-2xl">
-            <div className="flex flex-wrap items-center gap-2 mb-2">
-              <SeriesBadge name={event.series.name} color={seriesColor} />
-              <span className={`text-xs px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${EVENT_STATUS_STYLES[event.status] || ''}`}>
-                {event.status === 'live' && <LiveIndicator />}
-                {event.status === 'live' ? 'LIVE' : event.status}
-              </span>
+          <div className="w-full md:w-72 lg:w-80">
+            <div className="rounded-lg border border-pitwall-border bg-pitwall-surface/70 overflow-hidden h-28 md:h-32">
+              <FallbackImage
+                candidates={winnerCarImageCandidates}
+                alt={`${event.name} winning car`}
+                className="h-full w-full object-cover"
+              />
             </div>
-            <h1 className="text-3xl font-bold text-pitwall-text mb-2">{event.name}</h1>
-            <div className="flex items-center gap-2 text-pitwall-text-muted">
-              <MapPin size={16} />
-              <span>{event.circuit.name} — {event.circuit.city}, {event.circuit.country}</span>
-            </div>
-          </div>
-          <div className="text-left sm:text-right">
-            <p className="text-lg font-mono text-pitwall-text">
-              {format(parseISO(event.startDate), 'MMM d')}
-              {event.startDate !== event.endDate && ` – ${format(parseISO(event.endDate), 'MMM d')}`}
-            </p>
-            <p className="text-sm text-pitwall-text-muted">{format(parseISO(event.startDate), 'yyyy')}</p>
-          </div>
-        </div>
-
-        <div className="relative grid grid-cols-2 md:grid-cols-4 gap-2">
-          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Sessions</p>
-            <p className="text-sm font-semibold text-pitwall-text">{event.sessions.length}</p>
-          </div>
-          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Circuit</p>
-            <p className="text-sm font-semibold text-pitwall-text truncate">{event.circuit.name}</p>
-          </div>
-          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Timezone</p>
-            <p className="text-sm font-semibold text-pitwall-text truncate">{event.circuit.timezone}</p>
-          </div>
-          <div className="bg-pitwall-surface/70 border border-pitwall-border rounded-lg px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-pitwall-text-muted">Status</p>
-            <p className="text-sm font-semibold text-pitwall-text capitalize">{event.status}</p>
           </div>
         </div>
       </div>
@@ -384,7 +309,13 @@ export default function EventDetailPage() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
         <div className="xl:col-span-4 2xl:col-span-3 space-y-5">
           <div className="rounded-xl border border-pitwall-border bg-pitwall-surface p-4">
-            <h2 className="text-lg font-semibold text-pitwall-text mb-3">Track Layout</h2>
+            <div className="mb-3">
+              <h2 className="text-lg font-semibold text-pitwall-text">{event.name}</h2>
+              <p className="mt-1 flex items-center gap-1 text-sm text-pitwall-text-muted">
+                <MapPin size={14} />
+                <span>{event.circuit.name} — {event.circuit.city}, {event.circuit.country}</span>
+              </p>
+            </div>
             <div className="rounded-lg border border-pitwall-border bg-pitwall-bg p-3 h-44 flex items-center justify-center overflow-hidden">
               {event.circuit.trackMapUrl ? (
                 <img
@@ -454,6 +385,46 @@ export default function EventDetailPage() {
               </div>
             </div>
           )}
+
+          <div className="rounded-xl border border-pitwall-border bg-pitwall-surface p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <PlayCircle size={16} className="text-red-400" />
+              <h2 className="text-lg font-semibold text-pitwall-text">Event Highlights</h2>
+            </div>
+            {isLoadingHighlights ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => (
+                  <div key={i} className="h-14 rounded-md bg-pitwall-bg animate-pulse" />
+                ))}
+              </div>
+            ) : highlights.length > 0 ? (
+              <div className="space-y-2">
+                {highlights.slice(0, 4).map(item => (
+                  <a
+                    key={item.id}
+                    href={item.contentUrl || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex gap-3 rounded-md p-1 hover:bg-pitwall-bg transition-colors"
+                  >
+                    <div className="h-14 w-24 shrink-0 overflow-hidden rounded bg-pitwall-bg">
+                      {item.thumbnailUrl && (
+                        <img src={item.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="line-clamp-2 text-xs font-medium text-pitwall-text">{item.title}</p>
+                      <p className="mt-1 text-[11px] text-pitwall-text-muted">
+                        {format(parseISO(item.publishedAt), 'MMM d, yyyy')}
+                      </p>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-pitwall-text-muted">No event highlights available yet.</p>
+            )}
+          </div>
 
           {event.status === 'upcoming' && (
             <div className="bg-pitwall-surface rounded-lg border border-pitwall-border p-5 text-center">
@@ -554,6 +525,7 @@ export default function EventDetailPage() {
                     gap: useClassIntervals ? (classIntervals[idx] ?? r.gap) : r.gap,
                   }))}
                   eventName={`${event.name} — ${SESSION_TYPE_LABELS[selectedSession?.type || ''] || selectedSession?.name || ''}`}
+                  showLeaderGap={selectedSession?.type === 'qualifying'}
                   onDriverClick={(entry) => {
                     setPreferredTelemetryDriver({
                       name: entry.driverName,
@@ -584,6 +556,7 @@ export default function EventDetailPage() {
                   <RaceReplayCard
                     telemetry={telemetry}
                     trackMapUrl={event.circuit.trackMapUrl}
+                    trackGeometry={event.circuit.trackGeometry}
                     trackSeed={`${event.series.slug}-${event.slug}-${event.circuit.name}`}
                   />
                 ) : (

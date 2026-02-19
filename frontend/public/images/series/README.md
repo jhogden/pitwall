@@ -1,6 +1,14 @@
-# Series Artwork
+# Series Car Artwork
 
-Replace these placeholder SVG files with licensed images or custom artwork:
+Replace placeholder SVG files with real or generated series car images.
+
+Preferred filenames (used first):
+
+- `f1-car-photo.webp` (or `.jpg` / `.png`)
+- `wec-car-photo.webp` (or `.jpg` / `.png`)
+- `imsa-car-photo.webp` (or `.jpg` / `.png`)
+
+Fallback placeholders (already present):
 
 - `f1-car.svg`
 - `wec-car.svg`
@@ -8,6 +16,6 @@ Replace these placeholder SVG files with licensed images or custom artwork:
 
 Guidelines:
 
-- Preferred size: 1200x630 or larger (16:9+ works best).
-- Keep file names unchanged, or update paths in `frontend/src/app/page.tsx`.
-- Use assets you own or have explicit license rights to use.
+- Recommended size: 1200x630 or larger.
+- Keep driver/car visible near center-right for header crops.
+- Use licensed assets only.

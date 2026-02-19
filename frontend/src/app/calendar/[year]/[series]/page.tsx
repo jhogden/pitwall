@@ -18,6 +18,7 @@ import {
 import { ChevronLeft, ChevronRight, List, Grid3X3, ChevronDown } from 'lucide-react'
 import SeriesBadge from '@/components/SeriesBadge'
 import LiveIndicator from '@/components/LiveIndicator'
+import FallbackImage from '@/components/FallbackImage'
 import { resolveSeriesColor, SERIES_FILTERS, STATUS_STYLES } from '@/lib/constants'
 import { getSeriesAsset, seriesHeroBackground } from '@/lib/assets'
 import { api } from '@/lib/api'
@@ -127,9 +128,9 @@ export default function CalendarPage() {
           style={{ background: seriesHeroBackground(selectedSeries) }}
         />
         {selectedSeriesAsset && (
-          <img
-            src={selectedSeriesAsset.heroImageUrl}
-            alt=""
+          <FallbackImage
+            candidates={selectedSeriesAsset.heroImageCandidates}
+            alt={`${selectedSeriesAsset.name} car`}
             className="pointer-events-none absolute inset-y-0 right-0 hidden h-full w-[42%] object-cover opacity-20 md:block"
           />
         )}

@@ -15,6 +15,7 @@ interface RaceResultCardProps {
   results: RaceResultEntry[]
   eventName: string
   onDriverClick?: (entry: RaceResultEntry) => void
+  showLeaderGap?: boolean
 }
 
 function positionColor(position: number): string {
@@ -31,7 +32,7 @@ function positionBg(position: number): string {
   return ''
 }
 
-export default function RaceResultCard({ results, eventName, onDriverClick }: RaceResultCardProps) {
+export default function RaceResultCard({ results, eventName, onDriverClick, showLeaderGap = false }: RaceResultCardProps) {
   const [showAll, setShowAll] = useState(false)
   const hasMore = results.length > 10
   const displayedResults = showAll ? results : results.slice(0, 10)
@@ -81,7 +82,7 @@ export default function RaceResultCard({ results, eventName, onDriverClick }: Ra
             </span>
 
             <span className="font-mono text-xs text-pitwall-text-muted text-right">
-              {entry.position === 1 ? '' : entry.gap || ''}
+              {entry.position === 1 ? (showLeaderGap ? entry.gap || '' : '') : entry.gap || ''}
             </span>
           </div>
         ))}

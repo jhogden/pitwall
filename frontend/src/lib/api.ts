@@ -47,6 +47,7 @@ export interface Circuit {
   city: string
   trackMapUrl: string | null
   timezone: string
+  trackGeometry: string | null
 }
 
 export interface EventDetail {
@@ -173,6 +174,26 @@ export interface FeedPage {
   number: number
 }
 
+export interface DataCoverageRow {
+  seriesSlug: string
+  seriesName: string
+  year: number
+  eventCount: number
+  eventsWithTrackMap: number
+  trackMapCoveragePct: number
+  sessionCount: number
+  raceSessionCount: number
+  sessionsWithResults: number
+  resultsCoveragePct: number
+  sessionsWithTelemetry: number
+  telemetryCoveragePct: number
+  sessionsWithTireStints: number
+  tireCoveragePct: number
+  driverStandingsCount: number
+  constructorStandingsCount: number
+  standingsCoveragePct: number
+}
+
 // API functions
 export const api = {
   getSeries: () => fetchApi<Series[]>('/api/series'),
@@ -230,4 +251,11 @@ export const api = {
   getStandingClasses: (slug: string, year?: number) =>
     fetchApi<string[]>(`/api/series/${slug}/classes${year ? `?year=${year}` : ''}`),
   getDriver: (slug: string) => fetchApi<Driver>(`/api/drivers/${slug}`),
+  getDataCoverage: (series?: string, year?: number) => {
+    const params = new URLSearchParams()
+    if (series) params.set('series', series)
+    if (year) params.set('year', String(year))
+    const qs = params.toString()
+    return fetchApi<DataCoverageRow[]>(`/api/coverage${qs ? `?${qs}` : ''}`)
+  },
 }

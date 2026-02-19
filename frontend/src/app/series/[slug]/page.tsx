@@ -80,7 +80,7 @@ export default function SeriesDetailPage() {
         const classToUse = (() => {
           if (!isClassBasedSeries || classes.length === 0) return null
           if (selectedClass && classes.includes(selectedClass)) return selectedClass
-          return classes[0]
+          return null
         })()
 
         setSelectedClass(classToUse)
@@ -158,6 +158,9 @@ export default function SeriesDetailPage() {
         {isClassBasedSeries && selectedClass && (
           <p className="text-pitwall-text-muted text-sm mt-1">Class: {selectedClass}</p>
         )}
+        {isClassBasedSeries && !selectedClass && (
+          <p className="text-pitwall-text-muted text-sm mt-1">Class: All classes</p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -199,12 +202,13 @@ export default function SeriesDetailPage() {
             ))}
           </select>
         )}
-        {standingClasses.length > 1 && (
+        {isClassBasedSeries && standingClasses.length > 0 && (
           <select
-            value={selectedClass ?? ''}
-            onChange={(e) => setSelectedClass(e.target.value || null)}
+            value={selectedClass ?? '__all__'}
+            onChange={(e) => setSelectedClass(e.target.value === '__all__' ? null : e.target.value)}
             className="bg-pitwall-surface border border-pitwall-border rounded px-3 py-2 text-sm text-pitwall-text"
           >
+            <option value="__all__">All classes</option>
             {standingClasses.map(className => (
               <option key={className} value={className}>{className}</option>
             ))}
@@ -214,6 +218,13 @@ export default function SeriesDetailPage() {
 
       {activeTab === 'drivers' && (
         <div className="bg-pitwall-surface rounded-lg border border-pitwall-border overflow-hidden">
+          {isClassBasedSeries && (
+            <div className="px-4 py-2 border-b border-pitwall-border bg-pitwall-bg/50">
+              <p className="text-xs text-pitwall-text-muted">
+                Points scope: <span className="text-pitwall-text">{selectedClass || 'All classes'}</span>
+              </p>
+            </div>
+          )}
           {driverStandings.length === 0 ? (
             <p className="text-pitwall-text-muted p-6 text-center">No driver standings available for this season yet.</p>
           ) : (
@@ -223,6 +234,9 @@ export default function SeriesDetailPage() {
                   <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3 w-12">POS</th>
                   <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3">DRIVER</th>
                   <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3 hidden sm:table-cell">TEAM</th>
+                  {isClassBasedSeries && (
+                    <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3 hidden md:table-cell">CLASS</th>
+                  )}
                   <th className="text-right text-xs text-pitwall-text-muted font-medium px-4 py-3 w-20">W</th>
                   <th className="text-right text-xs text-pitwall-text-muted font-medium px-4 py-3 w-20">PTS</th>
                 </tr>
@@ -243,6 +257,9 @@ export default function SeriesDetailPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell text-sm text-pitwall-text-muted">{standing.teamName || '—'}</td>
+                    {isClassBasedSeries && (
+                      <td className="px-4 py-3 hidden md:table-cell text-sm text-pitwall-text-muted">{standing.className || '—'}</td>
+                    )}
                     <td className="px-4 py-3 text-right font-mono text-pitwall-text-muted">{standing.wins}</td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-pitwall-text">{standing.points}</td>
                   </tr>
@@ -255,6 +272,13 @@ export default function SeriesDetailPage() {
 
       {activeTab === 'constructors' && (
         <div className="bg-pitwall-surface rounded-lg border border-pitwall-border overflow-hidden">
+          {isClassBasedSeries && (
+            <div className="px-4 py-2 border-b border-pitwall-border bg-pitwall-bg/50">
+              <p className="text-xs text-pitwall-text-muted">
+                Points scope: <span className="text-pitwall-text">{selectedClass || 'All classes'}</span>
+              </p>
+            </div>
+          )}
           {constructorStandings.length === 0 ? (
             <p className="text-pitwall-text-muted p-6 text-center">No constructor standings available for this season yet.</p>
           ) : (
@@ -263,6 +287,9 @@ export default function SeriesDetailPage() {
                 <tr className="border-b border-pitwall-border">
                   <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3 w-12">POS</th>
                   <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3">TEAM</th>
+                  {isClassBasedSeries && (
+                    <th className="text-left text-xs text-pitwall-text-muted font-medium px-4 py-3 hidden md:table-cell">CLASS</th>
+                  )}
                   <th className="text-right text-xs text-pitwall-text-muted font-medium px-4 py-3 w-20">W</th>
                   <th className="text-right text-xs text-pitwall-text-muted font-medium px-4 py-3 w-20">PTS</th>
                 </tr>
@@ -277,6 +304,9 @@ export default function SeriesDetailPage() {
                         <p className="font-semibold text-pitwall-text text-sm">{standing.teamName}</p>
                       </div>
                     </td>
+                    {isClassBasedSeries && (
+                      <td className="px-4 py-3 hidden md:table-cell text-sm text-pitwall-text-muted">{standing.className || '—'}</td>
+                    )}
                     <td className="px-4 py-3 text-right font-mono text-pitwall-text-muted">{standing.wins}</td>
                     <td className="px-4 py-3 text-right font-mono font-bold text-pitwall-text">{standing.points}</td>
                   </tr>
