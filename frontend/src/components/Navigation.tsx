@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Home, Calendar, Settings, Menu, X, Flag } from 'lucide-react'
+import { Home, Calendar, Settings, Menu, X, Flag, Users } from 'lucide-react'
 
 const currentYear = new Date().getFullYear()
 
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { href: '/', label: 'Home', icon: Home },
   { href: `/calendar/${currentYear}/all`, label: 'Calendar', icon: Calendar, activePrefix: '/calendar' },
   { href: '/series', label: 'Series', icon: Flag },
+  { href: '/drivers', label: 'Drivers', icon: Users, activePrefix: '/drivers' },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
 

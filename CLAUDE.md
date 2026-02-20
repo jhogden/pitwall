@@ -2,6 +2,17 @@
 
 This document outlines core development principles and practices for this project. Following these guidelines ensures maintainable, testable, and robust code.
 
+## Mandatory Backend Testing
+
+**Every backend change MUST have corresponding tests. This is non-negotiable.**
+
+- Any new or modified service method requires unit tests covering its behavior
+- Any new or modified controller endpoint requires unit tests verifying delegation and parameter passing
+- Tests must follow the existing patterns: `@ExtendWith(MockitoExtension.class)`, `@Mock`/`@InjectMocks`, AAA structure
+- Test files live alongside production code: `src/test/java/com/pitwall/service/` and `src/test/java/com/pitwall/controller/`
+- Run `make test-be` after writing tests to confirm they pass before considering the task complete
+- Do NOT submit backend code without tests — if you wrote a service method, you must also write the test for it
+
 ## SOLID Principles
 
 These five principles form the foundation of good object-oriented design:

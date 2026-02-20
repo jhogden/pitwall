@@ -10,6 +10,8 @@ public record DriverResultDto(
         int position,
         String gap,
         String status,
-        int year
+        int year,
+        String circuitName,
+        String sessionType
 ) {
 }

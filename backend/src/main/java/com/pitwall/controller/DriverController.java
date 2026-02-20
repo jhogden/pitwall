@@ -22,6 +22,15 @@ public class DriverController {
         this.driverService = driverService;
     }
 
+    @GetMapping
+    public ResponseEntity<List<DriverDto>> getDriversBySeries(
+            @RequestParam(required = false) String series) {
+        if (series != null) {
+            return ResponseEntity.ok(driverService.findBySeriesSlug(series));
+        }
+        return ResponseEntity.ok(driverService.findAll());
+    }
+
     @GetMapping("/{slug}")
     public ResponseEntity<DriverDto> getDriverBySlug(@PathVariable String slug) {
         return ResponseEntity.ok(driverService.findBySlug(slug));
@@ -30,7 +39,19 @@ public class DriverController {
     @GetMapping("/{slug}/results")
     public ResponseEntity<List<DriverResultDto>> getDriverResults(
             @PathVariable String slug,
-            @RequestParam(required = false) Integer year) {
-        return ResponseEntity.ok(driverService.findResultsBySlug(slug, year));
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) String circuit,
+            @RequestParam(required = false) String sessionType) {
+        return ResponseEntity.ok(driverService.findResultsBySlug(slug, year, circuit, sessionType));
+    }
+
+    @GetMapping("/{slug}/circuits")
+    public ResponseEntity<List<String>> getDriverCircuits(@PathVariable String slug) {
+        return ResponseEntity.ok(driverService.findCircuitsByDriverSlug(slug));
+    }
+
+    @GetMapping("/{slug}/seasons")
+    public ResponseEntity<List<Integer>> getDriverSeasons(@PathVariable String slug) {
+        return ResponseEntity.ok(driverService.findSeasonsByDriverSlug(slug));
     }
 }

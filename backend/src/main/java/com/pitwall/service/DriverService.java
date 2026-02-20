@@ -28,6 +28,12 @@ public class DriverService {
         this.driverMapper = driverMapper;
     }
 
+    public List<DriverDto> findAll() {
+        return driverRepository.findAll().stream()
+                .map(driverMapper::toDto)
+                .toList();
+    }
+
     public DriverDto findBySlug(String slug) {
         return driverRepository.findBySlug(slug)
                 .map(driverMapper::toDto)
@@ -40,18 +46,21 @@ public class DriverService {
                 .toList();
     }
 
-    public List<DriverResultDto> findResultsBySlug(String slug, Integer year) {
-        List<Result> results;
-        if (year != null) {
-            results = resultRepository.findByDriverSlugAndSessionTypeAndSessionEventSeasonYearOrderBySessionStartTimeAsc(
-                    slug, "race", year);
-        } else {
-            results = resultRepository.findByDriverSlugAndSessionTypeOrderBySessionStartTimeDesc(
-                    slug, "race");
-        }
+    public List<DriverResultDto> findResultsBySlug(String slug, Integer year,
+                                                     String circuitName, String sessionType) {
+        List<Result> results = resultRepository.findFilteredResults(
+                slug, year, circuitName, sessionType);
         return results.stream()
                 .map(this::toDriverResultDto)
                 .toList();
+    }
+
+    public List<String> findCircuitsByDriverSlug(String slug) {
+        return resultRepository.findDistinctCircuitNamesByDriverSlug(slug);
+    }
+
+    public List<Integer> findSeasonsByDriverSlug(String slug) {
+        return resultRepository.findDistinctSeasonsByDriverSlug(slug);
     }
 
     private DriverResultDto toDriverResultDto(Result result) {
@@ -65,7 +74,9 @@ public class DriverService {
                 result.getPosition(),
                 result.getGap(),
                 result.getStatus(),
-                event.getSeason().getYear()
+                event.getSeason().getYear(),
+                event.getCircuit().getName(),
+                session.getType()
         );
     }
 }

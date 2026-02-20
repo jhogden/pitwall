@@ -194,6 +194,19 @@ export interface DataCoverageRow {
   standingsCoveragePct: number
 }
 
+export interface DriverResult {
+  eventName: string
+  eventSlug: string
+  seriesSlug: string
+  date: string
+  position: number
+  gap: string | null
+  status: string
+  year: number
+  circuitName: string
+  sessionType: string
+}
+
 // API functions
 export const api = {
   getSeries: () => fetchApi<Series[]>('/api/series'),
@@ -250,7 +263,23 @@ export const api = {
   },
   getStandingClasses: (slug: string, year?: number) =>
     fetchApi<string[]>(`/api/series/${slug}/classes${year ? `?year=${year}` : ''}`),
+  getDrivers: (series?: string) => {
+    const params = new URLSearchParams()
+    if (series) params.set('series', series)
+    const qs = params.toString()
+    return fetchApi<Driver[]>(`/api/drivers${qs ? `?${qs}` : ''}`)
+  },
   getDriver: (slug: string) => fetchApi<Driver>(`/api/drivers/${slug}`),
+  getDriverResults: (slug: string, year?: number, circuit?: string, sessionType?: string) => {
+    const params = new URLSearchParams()
+    if (year) params.set('year', String(year))
+    if (circuit) params.set('circuit', circuit)
+    if (sessionType) params.set('sessionType', sessionType)
+    const qs = params.toString()
+    return fetchApi<DriverResult[]>(`/api/drivers/${slug}/results${qs ? `?${qs}` : ''}`)
+  },
+  getDriverCircuits: (slug: string) => fetchApi<string[]>(`/api/drivers/${slug}/circuits`),
+  getDriverSeasons: (slug: string) => fetchApi<number[]>(`/api/drivers/${slug}/seasons`),
   getDataCoverage: (series?: string, year?: number) => {
     const params = new URLSearchParams()
     if (series) params.set('series', series)
